@@ -1,10 +1,9 @@
 import threading
 import time
 
-from flask import Flask, render_template, jsonify
-
 from backend.database import GNBDatabase
 from backend.gnb_monitor import start_gnb_monitor
+from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
@@ -20,10 +19,17 @@ def index():
 
 @app.route("/api/throughput")
 def throughput():
+    duration = request.args.get(
+        "range",
+        "10m"
+    )
+
     return jsonify(
-        db.get_latest_throughput(
-            limit=1000
+
+        db.get_throughput_history(
+            duration
         )
+
     )
 
 
