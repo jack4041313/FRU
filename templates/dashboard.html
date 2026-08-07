@@ -8,20 +8,15 @@
 gNB Monitor
 </title>
 
-
 <link
 href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
 rel="stylesheet">
-
-
 <link
+
 rel="stylesheet"
 href="{{ url_for('static', filename='css/style.css') }}"
 >
-
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 
 </head>
 
@@ -32,152 +27,155 @@ href="{{ url_for('static', filename='css/style.css') }}"
 
 <div class="container">
 
-
 <h2 class="mt-4">
 gNB Monitor Dashboard
 </h2>
 
-
+<!--
+gNB Information
+-->
 
 <div class="card mt-3">
+    <div class="card-body">
+        <h5>
+        gNB Information
+        </h5>
 
-<div class="card-body">
+        <!--
+        gNB IP
+        -->
+        <p>
+        IP:
+        <span id="gnb-ip"></span>
+        </p>
 
-<h5>
-gNB Information
-</h5>
-
-
-<p>
-IP:
-<span id="gnb-ip"></span>
-</p>
-
-
-<p>
-Status:
-
-<span id="status" class="badge">
-Connected
-</span>
-
-</p>
-
-
-</div>
-
-</div>
-
-
-
-
-
-<div class="card mt-4">
-
-
-<div class="card-body">
-
-
-<h5>
-DL Throughput (Mbps)
-</h5>
-
-
-
-<!-- Time range selector -->
+        <!--
+        gNB status
+        -->
+        <p>
+        Status:
+        <span id="status" class="badge bg-success">
+        Connected
+        </span>
+        </p>
+        <!-- Time range selector -->
 
 <div class="mb-3">
+    <label for="timeRange">
+    Time Range:
+    </label>
 
+    <select
+    id="timeRange"
+    class="form-select"
+    style="width:200px;"
+    >
+        <option value="10m">
+        最近 10 分鐘
+        </option>
 
-<label for="timeRange">
+        <option value="1h">
+        最近 1 小時
+        </option>
 
-Time Range:
+        <option value="3h">
+        最近 3 小時
+        </option>
 
-</label>
+        <option value="6h">
+        最近 6 小時
+        </option>
 
+        <option value="12h">
+        最近 12 小時
+        </option>
 
-<select
-id="timeRange"
-class="form-select"
-style="width:200px;"
->
+        <option value="24h">
+        最近 24 小時
+        </option>
 
+        <option value="3d">
+        最近 3 天
+        </option>
 
-<option value="10m">
-最近 10 分鐘
-</option>
+        <option value="7d">
+        最近 7 天
+        </option>
+    </select>
 
+</div>
 
-<option value="1h">
-最近 1 小時
-</option>
+</div>
 
+</div>
 
-<option value="3h">
-最近 3 小時
-</option>
+<!--
+Cell-0 DL Throughput
+-->
+<div class="card mt-4">
+<div class="card-body">
+    <h5>
+    Cell-0 DL Throughput (Mbps)
+    </h5>
 
+    <div class="chart-container">
+    <canvas id="cell0DlChart"></canvas>
+    </div>
+</div>
+</div>
 
-<option value="6h">
-最近 6 小時
-</option>
+<!--
+Cell-0 UL Throughput
+-->
+<div class="card mt-4">
+<div class="card-body">
+    <h5>
+    Cell-0 UL Throughput (Mbps)
+    </h5>
 
+    <div class="chart-container">
+    <canvas id="cell0UlChart"></canvas>
+    </div>
+</div>
+</div>
 
-<option value="12h">
-最近 12 小時
-</option>
+<!--
+Cell-1 DL Throughput
+-->
+<div class="card mt-4">
+<div class="card-body">
+    <h5>
+    Cell-1 DL Throughput (Mbps)
+    </h5>
 
+    <div class="chart-container">
+    <canvas id="cell1DlChart"></canvas>
+    </div>
+</div>
+</div>
 
-<option value="24h">
-最近 24 小時
-</option>
+<!--
+Cell-1 UL Throughput
+-->
+<div class="card mt-4">
+<div class="card-body">
+    <h5>
+    CEll-1 UL Throughput (Mbps)
+    </h5>
 
-
-<option value="3d">
-最近 3 天
-</option>
-
-
-<option value="7d">
-最近 7 天
-</option>
-
-
-</select>
-
-
+    <div class="chart-container">
+    <canvas id="cell1UlChart"></canvas>
+    </div>
+</div>
 </div>
 
 
 
 
-<div class="chart-container">
-
-
-<canvas id="throughputChart"></canvas>
-
-
 </div>
-
-
-
-</div>
-
-
-</div>
-
-
-
-
-
-</div>
-
-
 
 <script src="/static/js/dashboard.js"></script>
 
-
 </body>
-
 
 </html>

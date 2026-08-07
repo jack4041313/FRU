@@ -1,3 +1,5 @@
+import time
+
 from datetime import datetime
 from backend.database import GNBDatabase
 from backend.ognb_component.base_server import server
@@ -9,6 +11,7 @@ class ognb(server):
         super().__init__(ip_address, username, password, port)
         self.throughput_monitor = None
         self.db = GNBDatabase()
+        self.last_throughput_time = time.time()
 
     def __del__(self):
         print('')
@@ -26,83 +29,99 @@ class ognb(server):
             f"tail -F {log_path}\n"
         )
 
+        buffer = ""
+
         while True:
+
+            # ==========================
+            # Check throughput timeout
+            # ==========================
+            if time.time() - self.last_throughput_time > 30:
+                timestamp = datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+
+                throughput = 0
+
+                print(
+                    f"[{timestamp}] "
+                    "No throughput data, gNB may crash"
+                )
+
+                self.db.insert_throughput(
+                    gnb_ip=self.ip_address,
+                    cell_id=1,
+                    throughput=throughput
+                )
+
+                # 避免每秒一直寫0
+                self.last_throughput_time = time.time()
+
+            # ==========================
+            # Receive SSH data
+            # ==========================
             if self.ssh_session.recv_ready():
 
                 data = self.ssh_session.recv(4096).decode()
-                for line in data.splitlines():
 
-                    if "1 (MU " in line:
+                buffer += data
 
-                        try:
-                            # print(line)
-                            parts = line.split("|")
+                lines = buffer.split("\n")
 
-                            # MAC-to-PHY Tput 欄位
-                            tput_field = parts[3].strip()
+                buffer = lines[-1]
 
-                            # 第一個值就是 DL throughput
-                            throughput = float(tput_field.split()[0].replace(",", "")) / 1000
+                for line in lines[:-1]:
 
-                            timestamp = datetime.now().strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            )
+                    if "0 (MU " in line:
+                        cell_id = 0
 
-                            self.db.insert_throughput(
-                                gnb_ip=self.ip_address,
-                                cell_id=1,
-                                throughput=throughput
-                            )
+                    elif "1 (MU " in line:
+                        cell_id = 1
 
-                            print(
-                                f"[{timestamp}] DL Throughput = {throughput:.3f} Mbps"
-                            )
-                            
-                        except (IndexError, ValueError) as e:
+                    else:
+                        continue
 
-                            print(
-                                f"Skip invalid throughput line: {line}"
-                            )
+                    try:
+
+                        parts = line.split("|")
+
+                        if len(parts) <= 3:
                             continue
 
+                        tput_field = parts[3].strip()
 
-
-"""
-# real-time
-def scan_throughput(self, log_path="/workspace/logs/l1_log_tdd"):
-    self.ssh_session.send(f"tail -F {log_path}\n")
-
-    while True:
-        if self.ssh_session.recv_ready():
-            data = self.ssh_session.recv(4096).decode()
-
-            # print raw log
-            # print(data, end="\n")
-
-            for line in data.splitlines():
-                # print cell 1 throughput
-                if "1 (MU" in line:
-                    line = line.strip()
-                    match = re.search(
-                        r'\|\s+\d+,\s+\d+\s+\|\s+(\d+)\s+\d+\s+\|',
-                        line
-                    )
-
-                    if match:
-                        throughput = int(
-                            match.group(1)
+                        throughput = (
+                                float(
+                                    tput_field
+                                    .split()[0]
+                                    .replace(",", "")
+                                )
+                                / 1000
                         )
 
-                        timestamp = datetime.now()
+                        self.last_throughput_time = time.time()
 
-                        # 丟給 plot thread
-                        self.throughput_monitor.add_data(
-                                timestamp,
-                                throughput
+                        self.db.insert_throughput(
+                            gnb_ip=self.ip_address,
+                            cell_id=cell_id,
+                            throughput=throughput
+                        )
+
+                        timestamp = datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
                         )
 
                         print(
                             f"[{timestamp}] "
-                            f"DL Throughput={throughput} kbps"
+                            f"Cell-{cell_id} DL Throughput = {throughput:.3f} Mbps"
                         )
-"""
+
+                    except (IndexError, ValueError):
+
+                        continue
+
+            # 避免 CPU 100%
+            time.sleep(1)
+
+
+

@@ -1,5 +1,5 @@
-import threading
 import time
+import threading
 
 from backend.database import GNBDatabase
 from backend.gnb_monitor import start_gnb_monitor
@@ -19,18 +19,27 @@ def index():
 
 @app.route("/api/throughput")
 def throughput():
+
     duration = request.args.get(
         "range",
         "10m"
     )
+    return jsonify({
 
-    return jsonify(
+        "cell0_dl":
+            db.get_throughput_history(
+                duration=duration,
+                cell_id=0
+            ),
 
-        db.get_throughput_history(
-            duration
-        )
 
-    )
+        "cell1_dl":
+            db.get_throughput_history(
+                duration=duration,
+                cell_id=1
+            )
+
+    })
 
 
 def cleanup():

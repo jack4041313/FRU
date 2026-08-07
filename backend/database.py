@@ -93,8 +93,10 @@ class GNBDatabase:
 
     def get_latest_throughput(
             self,
+            cell_id,
             limit=1000
     ):
+
         cursor = self.conn.cursor()
 
         cursor.execute(
@@ -106,6 +108,8 @@ class GNBDatabase:
 
             FROM throughput
 
+            WHERE cell_id = ?
+
             ORDER BY id DESC
 
             LIMIT ?
@@ -113,13 +117,15 @@ class GNBDatabase:
             """,
 
             (
-                limit,
+                cell_id,
+                limit
             )
         )
 
         rows = cursor.fetchall()
 
-        # 時間排序由舊到新
+        # 因為 DESC 取資料
+        # 需要反轉成時間由舊到新
 
         rows.reverse()
 
@@ -151,16 +157,47 @@ class GNBDatabase:
 
     def get_throughput_history(
             self,
-            duration="10m"
+            duration="10m",
+            cell_id=None
     ):
 
         cursor = self.conn.cursor()
+
+        # 時間範圍
+        time_range = {
+
+            "10m": "-10 minute",
+
+            "1h": "-1 hour",
+
+            "3h": "-3 hour",
+
+            "6h": "-6 hour",
+
+            "12h": "-12 hour",
+
+            "24h": "-1 day",
+
+            "3d": "-3 day",
+
+            "7d": "-7 day"
+
+        }
+
+        if duration not in time_range:
+            return []
+
+        # =====================================================
+        # 10 minutes (顯示每一筆資料)
+        # =====================================================
 
         if duration == "10m":
 
             sql = """
             SELECT
+
                 timestamp,
+
                 dl_throughput
 
             FROM throughput
@@ -168,13 +205,42 @@ class GNBDatabase:
             WHERE timestamp >= datetime(
                 'now',
                 'localtime',
-                '-10 minute'
+                ?
             )
+            """
+
+            params = [
+                time_range[duration]
+            ]
+
+            if cell_id is not None:
+                sql += """
+
+                AND cell_id = ?
+
+                """
+
+                params.append(
+                    cell_id
+                )
+
+            sql += """
 
             ORDER BY timestamp
+
             """
 
-        elif duration == "1h":
+        # =====================================================
+        # 1h ~ 24h (每分鐘平均)
+        # =====================================================
+
+        elif duration in [
+            "1h",
+            "3h",
+            "6h",
+            "12h",
+            "24h"
+        ]:
 
             sql = """
             SELECT
@@ -182,207 +248,108 @@ class GNBDatabase:
                 strftime(
                     '%Y-%m-%d %H:%M',
                     timestamp
-                ),
+                ) AS time,
 
                 AVG(dl_throughput)
 
-
             FROM throughput
-
 
             WHERE timestamp >= datetime(
                 'now',
                 'localtime',
-                '-1 hour'
+                ?
             )
-
-
-            GROUP BY 1
-
-            ORDER BY 1
             """
 
-        elif duration == "3h":
+            params = [
+                time_range[duration]
+            ]
 
-            sql = """
-            SELECT
+            if cell_id is not None:
+                sql += """
 
-                strftime(
-                    '%Y-%m-%d %H:%M',
-                    timestamp
-                ),
+                AND cell_id = ?
 
-                AVG(dl_throughput)
+                """
 
+                params.append(
+                    cell_id
+                )
 
-            FROM throughput
+            sql += """
 
+            GROUP BY time
 
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                '-3 hour'
-            )
+            ORDER BY time
 
-
-            GROUP BY 1
-
-            ORDER BY 1
             """
 
-        elif duration == "6h":
-
-            sql = """
-            SELECT
-
-                strftime(
-                    '%Y-%m-%d %H:%M',
-                    timestamp
-                ),
-
-                AVG(dl_throughput)
-
-
-            FROM throughput
-
-
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                '-6 hour'
-            )
-
-
-            GROUP BY 1
-
-            ORDER BY 1
-            """
-
-        elif duration == "12h":
-
-            sql = """
-            SELECT
-
-                strftime(
-                    '%Y-%m-%d %H:%M',
-                    timestamp
-                ),
-
-                AVG(dl_throughput)
-
-
-            FROM throughput
-
-
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                '-12 hour'
-            )
-
-
-            GROUP BY 1
-
-            ORDER BY 1
-            """
-
-        elif duration == "24h":
-
-            sql = """
-            SELECT
-
-                strftime(
-                    '%Y-%m-%d %H:%M',
-                    timestamp
-                ),
-
-                AVG(dl_throughput)
-
-
-            FROM throughput
-
-
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                '-1 day'
-            )
-
-
-            GROUP BY 1
-
-            ORDER BY 1
-            """
-
-        elif duration == "3d":
-
-            sql = """
-            SELECT
-
-                strftime(
-                    '%Y-%m-%d %H',
-                    timestamp
-                ),
-
-                AVG(dl_throughput)
-
-
-            FROM throughput
-
-
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                '-3 day'
-            )
-
-
-            GROUP BY 1
-
-            ORDER BY 1
-            """
-
-        elif duration == "7d":
-
-            sql = """
-            SELECT
-
-                strftime(
-                    '%Y-%m-%d %H',
-                    timestamp
-                ),
-
-                AVG(dl_throughput)
-
-
-            FROM throughput
-
-
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                '-7 day'
-            )
-
-
-            GROUP BY 1
-
-            ORDER BY 1
-            """
+        # =====================================================
+        # 3d、7d (每小時平均)
+        # =====================================================
 
         else:
 
-            return []
+            sql = """
+            SELECT
 
-        cursor.execute(sql)
+                strftime(
+                    '%Y-%m-%d %H',
+                    timestamp
+                ) AS time,
+
+                AVG(dl_throughput)
+
+            FROM throughput
+
+            WHERE timestamp >= datetime(
+                'now',
+                'localtime',
+                ?
+            )
+            """
+
+            params = [
+                time_range[duration]
+            ]
+
+            if cell_id is not None:
+                sql += """
+
+                AND cell_id = ?
+
+                """
+
+                params.append(
+                    cell_id
+                )
+
+            sql += """
+
+            GROUP BY time
+
+            ORDER BY time
+
+            """
+
+        cursor.execute(
+            sql,
+            params
+        )
 
         rows = cursor.fetchall()
 
         return [
 
             {
+
                 "time": row[0],
-                "value": round(row[1], 3)
+
+                "value": round(
+                    row[1],
+                    3
+                ) if row[1] is not None else 0
+
             }
 
             for row in rows

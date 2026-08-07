@@ -4,6 +4,7 @@ import matplotlib.dates as mdates
 
 from queue import Queue
 
+
 class ThroughputMonitor:
 
     def __init__(self):
@@ -37,19 +38,6 @@ class ThroughputMonitor:
 
         self.throughput_queue.put(
             (timestamp, throughput)
-        )
-
-    def add_data(
-            self,
-            timestamp,
-            throughput
-    ):
-
-        throughput_data.append(
-            {
-                "time": timestamp,
-                "value": throughput
-            }
         )
 
     def update_plot(self):
@@ -101,74 +89,3 @@ class ThroughputMonitor:
                 last_update = time.time()
 
 
-"""
-class ThroughputMonitor:
-
-    def __init__(self):
-
-        self.throughput_queue = Queue()
-
-        self.times = []
-        self.values = []
-
-    def add_data(self, timestamp, throughput):
-
-        self.throughput_queue.put(
-            (
-                timestamp,
-                throughput
-            )
-        )
-
-    def realtime_plot(self):
-
-        fig, ax = plt.subplots()
-
-        line, = ax.plot(
-            [],
-            [],
-            marker="o"
-        )
-
-        def update(frame):
-
-            while not self.throughput_queue.empty():
-                timestamp, value = (
-                    self.throughput_queue.get()
-                )
-
-                self.times.append(timestamp)
-                self.values.append(value)
-
-            if self.times:
-                line.set_data(
-                    self.times,
-                    self.values
-                )
-
-                ax.relim()
-                ax.autoscale_view()
-
-                # 設定時間格式
-                ax.xaxis.set_major_formatter(
-                    mdates.DateFormatter("%H:%M:%S")
-                )
-
-                fig.autofmt_xdate()
-
-            return line,
-
-        self.ani = animation.FuncAnimation(
-            fig,
-            update,
-            interval=1000
-        )
-
-        ax.set_xlabel("Time")
-        ax.set_ylabel("DL Throughput (kbps)")
-        ax.set_title("Real Time DL Throughput")
-
-        plt.grid()
-
-        plt.show()
-"""
