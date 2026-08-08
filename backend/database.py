@@ -22,6 +22,7 @@ class GNBDatabase:
         )
 
         self.create_table()
+        self.upgrade_database()
 
     def create_table(self):
         cursor = self.conn.cursor()
@@ -58,8 +59,11 @@ class GNBDatabase:
             self,
             gnb_ip,
             cell_id,
-            throughput
+            dl_throughput,
+            ul_throughput,
+            ul_bler
     ):
+
         timestamp = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
@@ -73,11 +77,13 @@ class GNBDatabase:
                 timestamp,
                 gnb_ip,
                 cell_id,
-                dl_throughput
+                dl_throughput,
+                ul_throughput,
+                ul_bler
             )
 
             VALUES
-            (?, ?, ?, ?)
+            (?, ?, ?, ?, ?, ?)
 
             """,
 
@@ -85,7 +91,9 @@ class GNBDatabase:
                 timestamp,
                 gnb_ip,
                 cell_id,
-                throughput
+                dl_throughput,
+                ul_throughput,
+                ul_bler
             )
         )
 
@@ -158,28 +166,21 @@ class GNBDatabase:
     def get_throughput_history(
             self,
             duration="10m",
-            cell_id=None
+            cell_id=None,
+            column="dl_throughput"
     ):
 
         cursor = self.conn.cursor()
 
-        # 時間範圍
         time_range = {
 
             "10m": "-10 minute",
-
             "1h": "-1 hour",
-
             "3h": "-3 hour",
-
             "6h": "-6 hour",
-
             "12h": "-12 hour",
-
             "24h": "-1 day",
-
             "3d": "-3 day",
-
             "7d": "-7 day"
 
         }
@@ -187,31 +188,44 @@ class GNBDatabase:
         if duration not in time_range:
             return []
 
-        # =====================================================
-        # 10 minutes (顯示每一筆資料)
-        # =====================================================
+        params = []
 
-        if duration == "10m":
+        # ==================================
+        # 10m ~ 24h
+        # 保留所有原始資料
+        # ==================================
 
-            sql = """
+        if duration in [
+            "10m",
+            "1h",
+            "3h",
+            "6h",
+            "12h",
+            "24h"
+        ]:
+
+            sql = f"""
+
             SELECT
 
                 timestamp,
+                {column}
 
-                dl_throughput
 
             FROM throughput
+
 
             WHERE timestamp >= datetime(
                 'now',
                 'localtime',
                 ?
             )
+
             """
 
-            params = [
+            params.append(
                 time_range[duration]
-            ]
+            )
 
             if cell_id is not None:
                 sql += """
@@ -230,40 +244,62 @@ class GNBDatabase:
 
             """
 
-        # =====================================================
-        # 1h ~ 24h (每分鐘平均)
-        # =====================================================
 
-        elif duration in [
-            "1h",
-            "3h",
-            "6h",
-            "12h",
-            "24h"
-        ]:
 
-            sql = """
-            SELECT
+        # ==================================
+        # 3 days
+        # 每分鐘取最低 throughput
+        # ==================================
 
-                strftime(
-                    '%Y-%m-%d %H:%M',
-                    timestamp
-                ) AS time,
+        elif duration == "3d":
 
-                AVG(dl_throughput)
+            sql = f"""
 
-            FROM throughput
+            WITH ranked AS
+            (
 
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                ?
-            )
+                SELECT
+
+
+                    timestamp,
+
+                    {column},
+
+
+                    ROW_NUMBER() OVER
+                    (
+
+                        PARTITION BY
+
+                        strftime(
+                            '%Y-%m-%d %H:%M',
+                            timestamp
+                        )
+
+
+                        ORDER BY
+
+                        {column} ASC
+
+                    ) AS rn
+
+
+
+                FROM throughput
+
+
+
+                WHERE timestamp >= datetime(
+                    'now',
+                    'localtime',
+                    ?
+                )
+
             """
 
-            params = [
+            params.append(
                 time_range[duration]
-            ]
+            )
 
             if cell_id is not None:
                 sql += """
@@ -276,42 +312,95 @@ class GNBDatabase:
                     cell_id
                 )
 
-            sql += """
+            sql += f"""
 
-            GROUP BY time
+            )
 
-            ORDER BY time
 
-            """
-
-        # =====================================================
-        # 3d、7d (每小時平均)
-        # =====================================================
-
-        else:
-
-            sql = """
             SELECT
 
-                strftime(
-                    '%Y-%m-%d %H',
-                    timestamp
-                ) AS time,
+                timestamp,
+                {column}
 
-                AVG(dl_throughput)
 
-            FROM throughput
+            FROM ranked
 
-            WHERE timestamp >= datetime(
-                'now',
-                'localtime',
-                ?
-            )
+
+            WHERE rn = 1
+
+
+            ORDER BY timestamp
+
+
             """
 
-            params = [
+
+
+        # ==================================
+        # 7 days
+        # 每5分鐘取最低 throughput
+        # ==================================
+
+        elif duration == "7d":
+
+            sql = f"""
+
+            WITH ranked AS
+            (
+
+                SELECT
+
+
+                    timestamp,
+
+                    {column},
+
+
+                    ROW_NUMBER() OVER
+                    (
+
+                        PARTITION BY
+
+
+                        strftime(
+                            '%Y-%m-%d %H',
+                            timestamp
+                        ),
+
+
+                        CAST(
+                            strftime(
+                                '%M',
+                                timestamp
+                            ) AS INTEGER
+                        ) / 5
+
+
+
+                        ORDER BY
+
+                        {column} ASC
+
+
+                    ) AS rn
+
+
+
+                FROM throughput
+
+
+
+                WHERE timestamp >= datetime(
+                    'now',
+                    'localtime',
+                    ?
+                )
+
+            """
+
+            params.append(
                 time_range[duration]
-            ]
+            )
 
             if cell_id is not None:
                 sql += """
@@ -324,11 +413,25 @@ class GNBDatabase:
                     cell_id
                 )
 
-            sql += """
+            sql += f"""
 
-            GROUP BY time
+            )
 
-            ORDER BY time
+
+            SELECT
+
+                timestamp,
+                {column}
+
+
+            FROM ranked
+
+
+            WHERE rn = 1
+
+
+            ORDER BY timestamp
+
 
             """
 
@@ -339,19 +442,60 @@ class GNBDatabase:
 
         rows = cursor.fetchall()
 
-        return [
+        result = []
 
-            {
+        for row in rows:
+            result.append(
 
-                "time": row[0],
+                {
 
-                "value": round(
-                    row[1],
-                    3
-                ) if row[1] is not None else 0
+                    "time": row[0],
 
-            }
+                    "value":
+                        round(
+                            row[1]
+                            if row[1] is not None
+                            else 0,
 
-            for row in rows
+                            3
+                        )
 
+                }
+
+            )
+
+        return result
+
+    def upgrade_database(self):
+
+        cursor = self.conn.cursor()
+
+        cursor.execute(
+            """
+            PRAGMA table_info(throughput)
+            """
+        )
+
+        columns = [
+            row[1]
+            for row in cursor.fetchall()
         ]
+
+        if "ul_throughput" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE throughput
+                ADD COLUMN ul_throughput REAL
+                """
+            )
+
+        if "ul_bler" not in columns:
+            cursor.execute(
+                """
+                ALTER TABLE throughput
+                ADD COLUMN ul_bler REAL
+                """
+            )
+
+        self.conn.commit()
+

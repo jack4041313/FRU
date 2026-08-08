@@ -8,174 +8,441 @@
 gNB Monitor
 </title>
 
+
 <link
 href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
 rel="stylesheet">
-<link
 
+
+<link
 rel="stylesheet"
 href="{{ url_for('static', filename='css/style.css') }}"
 >
+
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-</head>
 
+</head>
 
 
 <body>
 
 
-<div class="container">
+<div class="container mt-3">
 
-<h2 class="mt-4">
+
+
+<h2 class="mt-2 mb-3">
 gNB Monitor Dashboard
 </h2>
 
-<!--
-gNB Information
--->
+
+
+
+
+<!-- =========================
+     Server Selection
+========================= -->
+
+
+<div class="card">
+
+
+<div class="card-body">
+
+
+
+<div class="d-flex gap-3 mb-3">
+
+
+
+<button
+type="button"
+class="btn btn-primary server-btn"
+data-server="server1"
+style="width:180px;height:70px;">
+
+Server-1
+<br>
+10.255.174.7
+
+</button>
+
+
+
+
+
+<button
+type="button"
+class="btn btn-secondary server-btn"
+data-server="server2"
+style="width:180px;height:70px;">
+
+Server-2
+<br>
+10.255.175.218
+
+</button>
+
+
+
+
+
+<button
+type="button"
+class="btn btn-secondary server-btn"
+data-server="server3"
+style="width:180px;height:70px;">
+
+Server-3
+<br>
+10.255.176.10
+
+</button>
+
+
+
+</div>
+
+
+
+
+<p class="mb-0">
+
+Status:
+
+<span
+id="status"
+class="badge bg-success">
+
+Connected
+
+</span>
+
+
+</p>
+
+
+
+
+
+</div>
+
+</div>
+
+
+<!-- Log Viewer -->
+
+<div class="row mt-3">
+
+
+    <!-- Log Window 1 -->
+
+    <div class="col-md-6">
+
+        <div class="card">
+
+            <div class="card-header">
+                netconf server
+            </div>
+
+
+            <div
+                id="logWindow1"
+                class="log-box"
+            >
+            </div>
+
+
+        </div>
+
+    </div>
+
+
+
+    <!-- Log Window 2 -->
+
+    <div class="col-md-6">
+
+        <div class="card">
+
+            <div class="card-header">
+                ru manager
+            </div>
+
+
+            <div
+                id="logWindow2"
+                class="log-box"
+            >
+            </div>
+
+
+        </div>
+
+    </div>
+
+
+</div>
+
+
+
+
+
+
+<!-- =========================
+     Time Range
+========================= -->
+
 
 <div class="card mt-3">
-    <div class="card-body">
-        <h5>
-        gNB Information
-        </h5>
 
-        <!--
-        gNB IP
-        -->
-        <p>
-        IP:
-        <span id="gnb-ip"></span>
-        </p>
 
-        <!--
-        gNB status
-        -->
-        <p>
-        Status:
-        <span id="status" class="badge bg-success">
-        Connected
-        </span>
-        </p>
-        <!-- Time range selector -->
-
-<div class="mb-3">
-    <label for="timeRange">
-    Time Range:
-    </label>
-
-    <select
-    id="timeRange"
-    class="form-select"
-    style="width:200px;"
-    >
-        <option value="10m">
-        最近 10 分鐘
-        </option>
-
-        <option value="1h">
-        最近 1 小時
-        </option>
-
-        <option value="3h">
-        最近 3 小時
-        </option>
-
-        <option value="6h">
-        最近 6 小時
-        </option>
-
-        <option value="12h">
-        最近 12 小時
-        </option>
-
-        <option value="24h">
-        最近 24 小時
-        </option>
-
-        <option value="3d">
-        最近 3 天
-        </option>
-
-        <option value="7d">
-        最近 7 天
-        </option>
-    </select>
-
-</div>
-
-</div>
-
-</div>
-
-<!--
-Cell-0 DL Throughput
--->
-<div class="card mt-4">
 <div class="card-body">
-    <h5>
-    Cell-0 DL Throughput (Mbps)
-    </h5>
 
-    <div class="chart-container">
-    <canvas id="cell0DlChart"></canvas>
-    </div>
-</div>
+
+<h5>
+Time Range
+</h5>
+
+
+
+<select
+id="timeRange"
+class="form-select"
+style="width:200px;"
+>
+
+
+<option value="10m">
+最近 10 分鐘
+</option>
+
+
+<option value="1h">
+最近 1 小時
+</option>
+
+
+<option value="3h">
+最近 3 小時
+</option>
+
+
+<option value="6h">
+最近 6 小時
+</option>
+
+
+<option value="12h">
+最近 12 小時
+</option>
+
+
+<option value="24h">
+最近 24 小時
+</option>
+
+
+<option value="3d">
+最近 3 天
+</option>
+
+
+<option value="7d">
+最近 7 天
+</option>
+
+
+</select>
+
+
 </div>
 
-<!--
-Cell-0 UL Throughput
--->
-<div class="card mt-4">
+
+</div>
+
+
+
+
+
+
+
+
+
+<!-- =========================
+     Cell-0 DL
+========================= -->
+
+
+<div class="card mt-3">
+
+
 <div class="card-body">
-    <h5>
-    Cell-0 UL Throughput (Mbps)
-    </h5>
 
-    <div class="chart-container">
-    <canvas id="cell0UlChart"></canvas>
-    </div>
-</div>
+
+<h5>
+Cell-0 DL Throughput (Mbps)
+</h5>
+
+
+
+<div class="chart-container">
+
+
+<canvas id="cell0DlChart"></canvas>
+
+
 </div>
 
-<!--
-Cell-1 DL Throughput
--->
-<div class="card mt-4">
+
+
+</div>
+
+
+</div>
+
+
+
+
+
+
+
+
+
+<!-- =========================
+     Cell-0 UL
+========================= -->
+
+
+<div class="card mt-3">
+
+
 <div class="card-body">
-    <h5>
-    Cell-1 DL Throughput (Mbps)
-    </h5>
 
-    <div class="chart-container">
-    <canvas id="cell1DlChart"></canvas>
-    </div>
-</div>
+
+<h5>
+Cell-0 UL Throughput (Mbps)
+</h5>
+
+
+
+<div class="chart-container">
+
+
+<canvas id="cell0UlChart"></canvas>
+
+
 </div>
 
-<!--
-Cell-1 UL Throughput
--->
-<div class="card mt-4">
+
+
+</div>
+
+
+</div>
+
+
+
+
+
+
+
+
+
+<!-- =========================
+     Cell-1 DL
+========================= -->
+
+
+<div class="card mt-3">
+
+
 <div class="card-body">
-    <h5>
-    CEll-1 UL Throughput (Mbps)
-    </h5>
 
-    <div class="chart-container">
-    <canvas id="cell1UlChart"></canvas>
-    </div>
+
+<h5>
+Cell-1 DL Throughput (Mbps)
+</h5>
+
+
+
+<div class="chart-container">
+
+
+<canvas id="cell1DlChart"></canvas>
+
+
 </div>
+
+
+
+</div>
+
+
 </div>
 
 
 
 
+
+
+
+
+
+<!-- =========================
+     Cell-1 UL
+========================= -->
+
+
+<div class="card mt-3">
+
+
+<div class="card-body">
+
+
+<h5>
+Cell-1 UL Throughput (Mbps)
+</h5>
+
+
+
+<div class="chart-container">
+
+
+<canvas id="cell1UlChart"></canvas>
+
+
 </div>
 
-<script src="/static/js/dashboard.js"></script>
+
+
+</div>
+
+
+</div>
+
+
+
+
+
+
+
+</div>
+
+
+
+
+
+
+<script
+src="{{ url_for('static', filename='js/dashboard.js') }}">
+</script>
+
+
 
 </body>
+
 
 </html>

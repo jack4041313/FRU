@@ -3,123 +3,144 @@ let range = "10m";
 
 
 //=============================
-// Cell-0 DL
+// Chart Creator
 //=============================
+
+function createChart(
+    element,
+    label,
+    color,
+    bgColor
+){
+
+    return new Chart(
+        document.getElementById(element),
+        {
+
+            type:"line",
+
+            data:{
+
+                labels:[],
+
+                datasets:[
+
+                    {
+                        label:label,
+
+                        data:[],
+
+                        borderColor:color,
+
+                        backgroundColor:bgColor,
+
+                        tension:0.3,
+
+                        fill:true
+                    }
+
+                ]
+
+            },
+
+            options:{
+
+                responsive:true,
+
+                maintainAspectRatio:false
+
+            }
+
+        }
+    );
+
+}
+
+
+
+//=============================
+// Charts
+//=============================
+
+
+// Cell-0 DL
 
 const cell0DlChart =
-new Chart(
-document.getElementById("cell0DlChart"),
-{
-    type:"line",
-
-    data:{
-        labels:[],
-        datasets:[
-        {
-            label:"Cell-0 DL Throughput (Mbps)",
-            data:[],
-            borderColor:"#38bdf8",
-            backgroundColor:"rgba(56,189,248,0.15)",
-            tension:0.3,
-            fill:true
-        }]
-    },
-
-    options:{
-        responsive:true,
-        maintainAspectRatio:false
-    }
-});
+createChart(
+    "cell0DlChart",
+    "Cell-0 DL Throughput (Mbps)",
+    "#38bdf8",
+    "rgba(56,189,248,0.15)"
+);
 
 
-//=============================
 // Cell-0 UL
-//=============================
 
 const cell0UlChart =
-new Chart(
-document.getElementById("cell0UlChart"),
-{
-    type:"line",
-
-    data:{
-        labels:[],
-        datasets:[
-        {
-            label:"Cell-0 UL Throughput (Mbps)",
-            data:[],
-            borderColor:"#22c55e",
-            backgroundColor:"rgba(34,197,94,0.15)",
-            tension:0.3,
-            fill:true
-        }]
-    },
-
-    options:{
-        responsive:true,
-        maintainAspectRatio:false
-    }
-});
+createChart(
+    "cell0UlChart",
+    "Cell-0 UL Throughput (Mbps)",
+    "#22c55e",
+    "rgba(34,197,94,0.15)"
+);
 
 
-//=============================
+
 // Cell-1 DL
-//=============================
 
 const cell1DlChart =
-new Chart(
-document.getElementById("cell1DlChart"),
-{
-    type:"line",
-
-    data:{
-        labels:[],
-        datasets:[
-        {
-            label:"Cell-1 DL Throughput (Mbps)",
-            data:[],
-            borderColor:"#f59e0b",
-            backgroundColor:"rgba(245,158,11,0.15)",
-            tension:0.3,
-            fill:true
-        }]
-    },
-
-    options:{
-        responsive:true,
-        maintainAspectRatio:false
-    }
-});
+createChart(
+    "cell1DlChart",
+    "Cell-1 DL Throughput (Mbps)",
+    "#f59e0b",
+    "rgba(245,158,11,0.15)"
+);
 
 
-//=============================
+
 // Cell-1 UL
-//=============================
 
 const cell1UlChart =
-new Chart(
-document.getElementById("cell1UlChart"),
-{
-    type:"line",
+createChart(
+    "cell1UlChart",
+    "Cell-1 UL Throughput (Mbps)",
+    "#ef4444",
+    "rgba(239,68,68,0.15)"
+);
 
-    data:{
-        labels:[],
-        datasets:[
-        {
-            label:"Cell-1 UL Throughput (Mbps)",
-            data:[],
-            borderColor:"#ef4444",
-            backgroundColor:"rgba(239,68,68,0.15)",
-            tension:0.3,
-            fill:true
-        }]
-    },
 
-    options:{
-        responsive:true,
-        maintainAspectRatio:false
-    }
-});
+
+
+
+//=====================================
+// Update Chart Function
+//=====================================
+
+function updateChart(
+    chart,
+    data
+){
+
+    if(!data)
+        return;
+
+
+    chart.data.labels =
+        data.map(
+            x=>x.time
+        );
+
+
+    chart.data.datasets[0].data =
+        data.map(
+            x=>x.value
+        );
+
+
+    chart.update();
+
+}
+
 
 
 
@@ -130,79 +151,69 @@ document.getElementById("cell1UlChart"),
 
 function updateThroughput(){
 
+
     fetch(
         "/api/throughput?range=" + range
     )
+
 
     .then(
         r=>r.json()
     )
 
+
     .then(
         data=>{
 
+
             console.log(data);
 
-            // Cell-0 DL
-            if(data.cell0_dl)
-            {
-
-                cell0DlChart.data.labels =
-                    data.cell0_dl.map(
-                        x=>x.time
-                    );
 
 
-                cell0DlChart.data.datasets[0].data =
-                    data.cell0_dl.map(
-                        x=>x.value
-                    );
+            //=========================
+            // DL
+            //=========================
 
 
-                cell0DlChart.update();
-
-            }
-
-
-            // Cell-1 DL
-
-            if(data.cell1_dl)
-            {
-
-                cell1DlChart.data.labels =
-                    data.cell1_dl.map(
-                        x=>x.time
-                    );
+            updateChart(
+                cell0DlChart,
+                data.cell0_dl
+            );
 
 
-                cell1DlChart.data.datasets[0].data =
-                    data.cell1_dl.map(
-                        x=>x.value
-                    );
-
-
-                cell1DlChart.update();
-
-            }
+            updateChart(
+                cell1DlChart,
+                data.cell1_dl
+            );
 
 
 
-            //
-            // 下面三張圖先更新空資料
-            // 等後端完成再修改
-            //
 
-            cell0UlChart.data.labels = [];
-            cell0UlChart.data.datasets[0].data = [];
-            cell0UlChart.update();
+            //=========================
+            // UL
+            //=========================
 
-            cell1UlChart.data.labels = [];
-            cell1UlChart.data.datasets[0].data = [];
-            cell1UlChart.update();
 
-        });
+            updateChart(
+                cell0UlChart,
+                data.cell0_ul
+            );
+
+
+            updateChart(
+                cell1UlChart,
+                data.cell1_ul
+            );
+
+
+        }
+
+    );
 
 }
+
+
+
 
 
 
@@ -218,9 +229,13 @@ function(){
 
     range = this.value;
 
+
     updateThroughput();
 
 });
+
+
+
 
 
 
@@ -233,10 +248,64 @@ updateThroughput();
 
 
 //=====================================
-// Refresh every 5 sec
+// Refresh
 //=====================================
 
 setInterval(
     updateThroughput,
     5000
+);
+
+//=====================================
+// log viewer
+//=====================================
+
+function updateLogs(){
+
+
+    fetch(
+        "/api/logs"
+    )
+
+
+    .then(
+        r=>r.json()
+    )
+
+
+    .then(
+        data=>{
+
+
+            document
+            .getElementById(
+                "logWindow1"
+            )
+            .innerText =
+                data.log1;
+
+
+
+            document
+            .getElementById(
+                "logWindow2"
+            )
+            .innerText =
+                data.log2;
+
+
+        }
+
+    );
+
+
+}
+
+
+updateLogs();
+
+
+setInterval(
+    updateLogs,
+    3000
 );
