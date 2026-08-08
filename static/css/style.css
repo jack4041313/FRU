@@ -1,6 +1,10 @@
+/* =====================================
+   Global
+   ===================================== */
+
 body {
 
-    background-color: #0f172a;   /* 深藍灰背景 */
+    background-color: #0f172a;
 
     color: #e2e8f0;
 
@@ -16,8 +20,9 @@ body {
 }
 
 
-
-/* Dashboard 標題 */
+/* =====================================
+   Dashboard Title
+   ===================================== */
 
 h2 {
 
@@ -30,8 +35,9 @@ h2 {
 }
 
 
-
-/* 卡片 */
+/* =====================================
+   Card
+   ===================================== */
 
 .card {
 
@@ -42,13 +48,39 @@ h2 {
     border-radius: 12px;
 
     box-shadow:
-        0 8px 20px rgba(0,0,0,0.35);
+        0 8px 20px rgba(0, 0, 0, 0.35);
+
+    overflow: hidden;
+
+    /*
+     * Prevent long log content from
+     * expanding the card.
+     */
+    min-width: 0;
 
 }
 
 
+/* =====================================
+   Card Header
+   ===================================== */
 
-/* 卡片標題 */
+.card-header {
+
+    background: #1f2937;
+
+    color: #f8fafc;
+
+    font-weight: bold;
+
+    border-bottom: 1px solid #334155;
+
+}
+
+
+/* =====================================
+   Card Title
+   ===================================== */
 
 .card h5 {
 
@@ -59,8 +91,9 @@ h2 {
 }
 
 
-
-/* IP */
+/* =====================================
+   gNB IP
+   ===================================== */
 
 #gnb-ip {
 
@@ -71,8 +104,9 @@ h2 {
 }
 
 
-
-/* Status Badge */
+/* =====================================
+   Status Badge
+   ===================================== */
 
 .badge {
 
@@ -89,8 +123,22 @@ h2 {
 }
 
 
+/* =====================================
+   Server Buttons
+   ===================================== */
 
-/* Chart Canvas */
+.server-button {
+
+    margin-right: 10px;
+
+    margin-bottom: 5px;
+
+}
+
+
+/* =====================================
+   Chart Canvas
+   ===================================== */
 
 canvas {
 
@@ -98,9 +146,12 @@ canvas {
 
     border-radius: 10px;
 
-    padding: 15px;
-
 }
+
+
+/* =====================================
+   Chart Container
+   ===================================== */
 
 .chart-container {
 
@@ -114,41 +165,487 @@ canvas {
 
     padding: 15px;
 
-}
+    box-sizing: border-box;
 
-/* Log title */
-.card-header {
-
-    background:#1f2937;
-
-    color:white;
-
-    font-weight:bold;
+    position: relative;
 
 }
 
 
-/* Log content */
-.log-box {
+/* =====================================
+   Log Grid
+   RU Manager + Netconf Server
+   ===================================== */
 
-    height:300px;
+.log-grid {
 
-    background:#111827;
+    display: grid;
 
-    color:#00ff00;
+    /*
+     * Force two equal-width columns.
+     *
+     * minmax(0, 1fr) is important because
+     * long log lines must NOT expand the column.
+     */
+    grid-template-columns:
+        minmax(0, 1fr)
+        minmax(0, 1fr);
 
-    padding:10px;
+    gap: 20px;
 
-    overflow-y:auto;
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    box-sizing: border-box;
+
+    align-items: start;
+
+}
+
+
+/* =====================================
+   Log Panel
+   ===================================== */
+
+.log-panel {
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    box-sizing: border-box;
+
+    overflow: hidden;
+
+}
+
+
+/* =====================================
+   Log Panel Card
+   ===================================== */
+
+.log-panel .card {
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    box-sizing: border-box;
+
+}
+
+
+/* =====================================
+   Log Panel Card Body
+   ===================================== */
+
+.log-panel .card-body {
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    box-sizing: border-box;
+
+}
+
+
+/* =====================================
+   Log Column
+   ===================================== */
+
+.log-column {
+
+    min-width: 0;
+
+    width: 100%;
+
+    max-width: 100%;
+
+    overflow: hidden;
+
+    box-sizing: border-box;
+
+}
+
+
+/* =====================================
+   Log Console Container
+   ===================================== */
+
+.log-console-container {
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    overflow: hidden;
+
+    box-sizing: border-box;
+
+}
+
+
+/* =====================================
+   Log Console
+   ===================================== */
+
+.log-console {
+
+    background-color: #111827;
+
+    color: #f9fafb;
+
+    height: 300px;
+
+    max-height: 300px;
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    overflow-y: auto;
+
+    overflow-x: hidden;
+
+    box-sizing: border-box;
+
+    padding: 12px;
+
+    margin: 0;
+
+    border-radius: 6px;
+
+    border: 1px solid #334155;
 
     font-family:
-        "Consolas",
+        Consolas,
+        "Courier New",
         monospace;
 
-    font-size:13px;
+    font-size: 13px;
 
-    border-radius:6px;
+    line-height: 1.4;
 
-    white-space:pre-wrap;
+    /*
+     * Keep line breaks from the log,
+     * but allow very long XML/log lines
+     * to wrap automatically.
+     */
+    white-space: pre-wrap;
+
+    word-break: break-word;
+
+    overflow-wrap: anywhere;
+
+    text-align: left;
 
 }
+
+
+/* =====================================
+   Netconf Console
+   ===================================== */
+
+#netconfConsole {
+
+    background-color: #111827;
+
+    color: #f9fafb;
+
+    height: 300px;
+
+    max-height: 300px;
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    overflow-y: auto;
+
+    overflow-x: hidden;
+
+    box-sizing: border-box;
+
+    padding: 12px;
+
+    margin: 0;
+
+    border-radius: 6px;
+
+    border: 1px solid #334155;
+
+    font-family:
+        Consolas,
+        "Courier New",
+        monospace;
+
+    font-size: 13px;
+
+    line-height: 1.4;
+
+    white-space: pre-wrap;
+
+    word-break: break-word;
+
+    overflow-wrap: anywhere;
+
+    text-align: left;
+
+}
+
+
+/* =====================================
+   RU Manager Console
+   ===================================== */
+
+#rumanagerConsole {
+
+    background-color: #111827;
+
+    color: #f9fafb;
+
+    height: 300px;
+
+    max-height: 300px;
+
+    width: 100%;
+
+    max-width: 100%;
+
+    min-width: 0;
+
+    overflow-y: auto;
+
+    overflow-x: hidden;
+
+    box-sizing: border-box;
+
+    padding: 12px;
+
+    margin: 0;
+
+    border-radius: 6px;
+
+    border: 1px solid #334155;
+
+    font-family:
+        Consolas,
+        "Courier New",
+        monospace;
+
+    font-size: 13px;
+
+    line-height: 1.4;
+
+    white-space: pre-wrap;
+
+    word-break: break-word;
+
+    overflow-wrap: anywhere;
+
+    text-align: left;
+
+}
+
+
+/* =====================================
+   Log Scrollbar
+   ===================================== */
+
+.log-console::-webkit-scrollbar {
+
+    width: 8px;
+
+}
+
+
+.log-console::-webkit-scrollbar-track {
+
+    background: #1e293b;
+
+}
+
+
+.log-console::-webkit-scrollbar-thumb {
+
+    background: #475569;
+
+    border-radius: 4px;
+
+}
+
+
+.log-console::-webkit-scrollbar-thumb:hover {
+
+    background: #64748b;
+
+}
+
+
+/* =====================================
+   Netconf Scrollbar
+   ===================================== */
+
+#netconfConsole::-webkit-scrollbar {
+
+    width: 8px;
+
+}
+
+
+#netconfConsole::-webkit-scrollbar-track {
+
+    background: #1e293b;
+
+}
+
+
+#netconfConsole::-webkit-scrollbar-thumb {
+
+    background: #475569;
+
+    border-radius: 4px;
+
+}
+
+
+#netconfConsole::-webkit-scrollbar-thumb:hover {
+
+    background: #64748b;
+
+}
+
+
+/* =====================================
+   RU Manager Scrollbar
+   ===================================== */
+
+#rumanagerConsole::-webkit-scrollbar {
+
+    width: 8px;
+
+}
+
+
+#rumanagerConsole::-webkit-scrollbar-track {
+
+    background: #1e293b;
+
+}
+
+
+#rumanagerConsole::-webkit-scrollbar-thumb {
+
+    background: #475569;
+
+    border-radius: 4px;
+
+}
+
+
+#rumanagerConsole::-webkit-scrollbar-thumb:hover {
+
+    background: #64748b;
+
+}
+
+
+/* =====================================
+   Select / Time Range
+   ===================================== */
+
+.form-select {
+
+    background-color: #1e293b;
+
+    color: #f8fafc;
+
+    border: 1px solid #475569;
+
+}
+
+
+.form-select:focus {
+
+    background-color: #1e293b;
+
+    color: #f8fafc;
+
+    border-color: #60a5fa;
+
+    box-shadow:
+        0 0 0 0.2rem
+        rgba(96, 165, 250, 0.25);
+
+}
+
+
+/* =====================================
+   Responsive
+   ===================================== */
+
+@media (max-width: 768px) {
+
+    /*
+     * On small screens, switch to
+     * one column.
+     */
+
+    .log-grid {
+
+        grid-template-columns: 1fr;
+
+    }
+
+
+    .chart-container {
+
+        height: 250px;
+
+    }
+
+
+    .log-console {
+
+        height: 250px;
+
+        max-height: 250px;
+
+    }
+
+
+    #netconfConsole {
+
+        height: 250px;
+
+        max-height: 250px;
+
+    }
+
+
+    #rumanagerConsole {
+
+        height: 250px;
+
+        max-height: 250px;
+
+    }
+
+}
+

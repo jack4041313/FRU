@@ -256,56 +256,124 @@ setInterval(
     5000
 );
 
+
 //=====================================
 // log viewer
 //=====================================
 
-function updateLogs(){
+function updateLogs() {
+
+    fetch("/api/logs")
+
+        .then(response => {
+
+            if (!response.ok) {
+
+                throw new Error(
+                    `HTTP error: ${response.status}`
+                );
+
+            }
+
+            return response.json();
+
+        })
+
+        .then(data => {
+
+            console.log(
+                "NETCONF LOG DATA:",
+                data
+            );
+
+            const consoleElement =
+                document.getElementById(
+                    "netconfConsole"
+                );
+
+            if (!consoleElement) {
+
+                console.error(
+                    "netconfConsole element not found"
+                );
+
+                return;
+
+            }
 
 
-    fetch(
-        "/api/logs"
-    )
+            //=====================================
+            // Check whether user is already
+            // near the bottom
+            //=====================================
+
+            const isAtBottom =
+                consoleElement.scrollHeight -
+                consoleElement.scrollTop -
+                consoleElement.clientHeight <
+                50;
 
 
-    .then(
-        r=>r.json()
-    )
+            //=====================================
+            // Update log content
+            //=====================================
+
+            if (
+                data.netconf !== undefined &&
+                data.netconf !== null
+            ) {
+
+                consoleElement.textContent =
+                    data.netconf;
+
+            }
+
+            else {
+
+                consoleElement.textContent =
+                    "No netconf log data";
+
+            }
 
 
-    .then(
-        data=>{
+            //=====================================
+            // Auto scroll
+            //
+            // Only scroll automatically if the
+            // user was already near the bottom.
+            //=====================================
 
+            if (isAtBottom) {
 
-            document
-            .getElementById(
-                "logWindow1"
-            )
-            .innerText =
-                data.log1;
+                consoleElement.scrollTop =
+                    consoleElement.scrollHeight;
 
+            }
 
+        })
 
-            document
-            .getElementById(
-                "logWindow2"
-            )
-            .innerText =
-                data.log2;
+        .catch(error => {
 
+            console.error(
+                "Failed to get netconf logs:",
+                error
+            );
 
-        }
-
-    );
-
+        });
 
 }
 
 
+//=====================================
+// Initial load
+//=====================================
 updateLogs();
 
 
+//=====================================
+// Refresh every 2 seconds
+//=====================================
 setInterval(
     updateLogs,
-    3000
+    2000
 );

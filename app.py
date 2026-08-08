@@ -2,8 +2,9 @@ import time
 import threading
 
 from backend.database import GNBDatabase
-from backend.gnb_monitor import start_gnb_monitor
+from backend.gnb_monitor import start_gnb_monitor, get_gnb, start_gnb_monitor_thread
 from flask import Flask, render_template, jsonify, request
+
 
 app = Flask(__name__)
 
@@ -64,27 +65,48 @@ def cleanup():
 
 @app.route("/api/logs")
 def logs():
+
+    gnb = get_gnb()
+
+    if gnb is None:
+
+        return jsonify({
+            "netconf": []
+        })
+
     return jsonify({
 
-        "log1":
-            "Waiting for gNB log...",
-
-        "log2":
-            "Waiting for RU log..."
+        "netconf":
+            gnb.get_netconf_logs()
 
     })
 
 
 if __name__ == "__main__":
-    threading.Thread(
-        target=start_gnb_monitor,
-        daemon=True
-    ).start()
+
+    # ==========================================
+    # Start gNB monitor
+    # ==========================================
+
+    start_gnb_monitor_thread(
+        ip_address="10.255.174.7",
+        username="ognb",
+        password="ognb123",
+        port=22
+    )
+
+    # ==========================================
+    # Start database cleanup
+    # ==========================================
 
     threading.Thread(
         target=cleanup,
         daemon=True
     ).start()
+
+    # ==========================================
+    # Start Flask
+    # ==========================================
 
     app.run(
         host="0.0.0.0",
