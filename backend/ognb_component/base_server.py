@@ -26,7 +26,10 @@ class server:
 
     @delay_decorator
     def connect(self):
-        logging.info(f"Connect server {self.ip_address}")
+        print(
+            f"[SSH] Creating SSH connection to "
+            f"{self.ip_address}:{self.port}"
+        )
 
         try:
             # logging.info(f"Connect to server {self.ip_address}")
@@ -38,6 +41,12 @@ class server:
             self.ssh_client.connect(
                 self.ip_address, port=self.port, username=self.username, password=self.password
             )
+
+            print(
+                f"[SSH] SSH connection established: "
+                f"{self.ip_address}"
+            )
+
             self.ssh_session = self.ssh_client.invoke_shell()
             time.sleep(5)
 

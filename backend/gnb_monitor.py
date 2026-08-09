@@ -15,36 +15,40 @@ _current_gnb = None
 # =========================================================
 
 def get_gnb():
+
     return _current_gnb
 
 
 # =========================================================
 # Throughput Monitor
 # =========================================================
+import traceback
+
 
 def start_throughput_monitor(gnb):
-    """
-    Monitor DL / UL throughput.
 
-    scan_throughput() is a blocking function,
-    therefore it runs in its own thread.
-    """
+    print(
+        f"[Throughput] Monitor start: "
+        f"{gnb.ip_address}"
+    )
 
     try:
 
-        # print(
-        #     f"[Throughput] "
-        #     f"Monitor start: {gnb.ip_address}"
-        # )
-
         gnb.scan_throughput()
+
+        print(
+            "[Throughput] "
+            "scan_throughput() returned normally"
+        )
 
     except Exception as e:
 
         print(
-            f"[Throughput] "
-            f"Monitor stopped: {e}"
+            "[Throughput] "
+            f"Monitor stopped: {repr(e)}"
         )
+
+        traceback.print_exc()
 
 
 # =========================================================
@@ -52,21 +56,22 @@ def start_throughput_monitor(gnb):
 # =========================================================
 
 def start_netconf_monitor(gnb):
-    """
-    Monitor Netconf server log.
 
-    The log is kept in memory only.
-    It is NOT stored in SQLite.
+    """
+    Start Netconf server log monitor.
+
+    The actual monitoring is handled by
+    start_netconf_monitor() inside ognb.
     """
 
     try:
 
-        # print(
-        #     f"[Netconf] "
-        #     f"Monitor start: {gnb.ip_address}"
-        # )
+        print(
+            f"[Netconf] "
+            f"Monitor start: {gnb.ip_address}"
+        )
 
-        gnb.get_netconf_logs()
+        gnb.start_netconf_monitor()
 
     except Exception as e:
 
@@ -81,25 +86,22 @@ def start_netconf_monitor(gnb):
 # =========================================================
 
 def start_rumanager_monitor(gnb):
+
     """
-    Monitor RU Manager log.
+    Start RU Manager log monitor.
 
-    Log path:
-
-        /workspace/logs/RU1_rumanager
-
-    The log is kept in memory only.
-    It is NOT stored in SQLite.
+    The actual monitoring is handled by
+    start_rumanager_monitor() inside ognb.
     """
 
     try:
 
-        # print(
-        #     f"[RU Manager] "
-        #     f"Monitor start: {gnb.ip_address}"
-        # )
+        print(
+            f"[RU Manager] "
+            f"Monitor start: {gnb.ip_address}"
+        )
 
-        gnb.get_rumanager_logs()
+        gnb.start_rumanager_monitor()
 
     except Exception as e:
 
@@ -119,12 +121,13 @@ def start_gnb_monitor(
         password,
         port=22
 ):
+
     global _current_gnb
 
-    # print(
-    #     f"[gNB Monitor] "
-    #     f"Starting gNB monitor: {ip_address}"
-    # )
+    print(
+        f"[gNB Monitor] "
+        f"Starting gNB monitor: {ip_address}"
+    )
 
     # =====================================================
     # Create gNB object
@@ -144,10 +147,10 @@ def start_gnb_monitor(
 
         )
 
-        # print(
-        #     f"[gNB Monitor] "
-        #     f"gNB object created: {ip_address}"
-        # )
+        print(
+            f"[gNB Monitor] "
+            f"gNB object created: {ip_address}"
+        )
 
     except Exception as e:
 
@@ -161,17 +164,17 @@ def start_gnb_monitor(
         return
 
     # =====================================================
-    # Connect to gNB
+    # Connect
     # =====================================================
 
     try:
 
         _current_gnb.connect()
 
-        # print(
-        #     f"[gNB Monitor] "
-        #     f"gNB connected: {ip_address}"
-        # )
+        print(
+            f"[gNB Monitor] "
+            f"gNB connected: {ip_address}"
+        )
 
     except Exception as e:
 
@@ -185,7 +188,16 @@ def start_gnb_monitor(
         return
 
     # =====================================================
-    # Start Throughput Monitor
+    # Start all monitors
+    # =====================================================
+
+    print(
+        f"[gNB Monitor] "
+        f"Starting all monitors: {ip_address}"
+    )
+
+    # =====================================================
+    # Throughput
     # =====================================================
 
     throughput_thread = threading.Thread(
@@ -196,19 +208,16 @@ def start_gnb_monitor(
             _current_gnb,
         ),
 
-        daemon=True
+        daemon=True,
+
+        name="ThroughputMonitor"
 
     )
 
     throughput_thread.start()
 
-    # print(
-    #     f"[gNB Monitor] "
-    #     f"Throughput monitor started"
-    # )
-
     # =====================================================
-    # Start Netconf Monitor
+    # Netconf
     # =====================================================
 
     netconf_thread = threading.Thread(
@@ -219,19 +228,16 @@ def start_gnb_monitor(
             _current_gnb,
         ),
 
-        daemon=True
+        daemon=True,
+
+        name="NetconfMonitor"
 
     )
 
     netconf_thread.start()
 
-    print(
-        f"[gNB Monitor] "
-        f"Netconf monitor started"
-    )
-
     # =====================================================
-    # Start RU Manager Monitor
+    # RU Manager
     # =====================================================
 
     rumanager_thread = threading.Thread(
@@ -242,24 +248,39 @@ def start_gnb_monitor(
             _current_gnb,
         ),
 
-        daemon=True
+        daemon=True,
+
+        name="RUManagerMonitor"
 
     )
 
     rumanager_thread.start()
 
+    # =====================================================
+    # Status
+    # =====================================================
+
     # print(
     #     f"[gNB Monitor] "
-    #     f"RU Manager monitor started"
+    #     f"All monitor threads started: {ip_address}"
     # )
-
-    # =====================================================
-    # Monitor status
-    # =====================================================
-
+    #
     # print(
     #     f"[gNB Monitor] "
-    #     f"All monitors started: {ip_address}"
+    #     f"Throughput thread alive: "
+    #     f"{throughput_thread.is_alive()}"
+    # )
+    #
+    # print(
+    #     f"[gNB Monitor] "
+    #     f"Netconf thread alive: "
+    #     f"{netconf_thread.is_alive()}"
+    # )
+    #
+    # print(
+    #     f"[gNB Monitor] "
+    #     f"RU Manager thread alive: "
+    #     f"{rumanager_thread.is_alive()}"
     # )
 
 
@@ -290,7 +311,9 @@ def start_gnb_monitor_thread(
 
         ),
 
-        daemon=True
+        daemon=True,
+
+        name="GNBMonitor"
 
     )
 
@@ -302,4 +325,3 @@ def start_gnb_monitor_thread(
     )
 
     return monitor_thread
-

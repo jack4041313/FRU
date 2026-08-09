@@ -1,5 +1,6 @@
 import time
 import threading
+import traceback
 
 from collections import deque
 from datetime import datetime
@@ -32,10 +33,25 @@ class ognb(server):
         self.db = GNBDatabase()
 
         # =========================================================
+        # SSH Channels
+        #
+        # 1. throughput_session
+        # 2. netconf_session
+        # 3. rumanager_session
+        #
+        # 三個 monitor 各自使用獨立 channel
+        # =========================================================
+
+        self.throughput_session = None
+        self.netconf_session = None
+        self.rumanager_session = None
+
+        # =========================================================
         # Throughput
         # =========================================================
 
-        self.throughput_monitor = None
+        self.throughput_running = False
+        self.throughput_thread = None
 
         self.last_throughput_time = time.time()
 
@@ -43,39 +59,42 @@ class ognb(server):
         # Netconf
         # =========================================================
 
-        self.netconf_session = None
-
         self.netconf_logs = deque(
             maxlen=200
         )
 
         self.netconf_running = False
-
         self.netconf_thread = None
 
         # =========================================================
         # RU Manager
         # =========================================================
 
-        self.rumanager_session = None
-
         self.rumanager_logs = deque(
             maxlen=200
         )
 
         self.rumanager_running = False
-
         self.rumanager_thread = None
 
     def __del__(self):
 
-        print("")
+        try:
+            self.stop_all_monitors()
+        except Exception:
+            pass
 
     # =========================================================
     # Super User
     # =========================================================
 
     def super_user(self):
+
+        if self.ssh_session is None:
+            print(
+                "[gNB] SSH session is not available"
+            )
+            return
 
         self.ssh_session.send(
             "su\n"
@@ -106,12 +125,68 @@ class ognb(server):
         )
 
     # =========================================================
+    # Create SSH Channel
+    #
+    # 所有 monitor 共用同一個 SSH transport
+    # 但各自建立獨立 channel
+    # =========================================================
+
+    def create_ssh_channel(self):
+
+        if self.ssh_session is None:
+            raise RuntimeError(
+                "Main SSH session is not available"
+            )
+
+        transport = (
+            self.ssh_session
+            .get_transport()
+        )
+
+        if transport is None:
+            raise RuntimeError(
+                "SSH transport is not available"
+            )
+
+        if not transport.is_active():
+            raise RuntimeError(
+                "SSH transport is not active"
+            )
+
+        channel = transport.open_session()
+
+        channel.get_pty()
+
+        channel.invoke_shell()
+
+        time.sleep(0.5)
+
+        # ---------------------------------------------------------
+        # 清除登入後可能存在的 banner / prompt
+        # ---------------------------------------------------------
+
+        while channel.recv_ready():
+
+            try:
+
+                channel.recv(
+                    4096
+                )
+
+            except Exception:
+
+                break
+
+        return channel
+
+    # =========================================================
     # Netconf Log Monitor
     # =========================================================
 
     def start_netconf_monitor(self):
 
         if self.netconf_running:
+
             print(
                 "[Netconf] "
                 "Monitor already running"
@@ -122,46 +197,15 @@ class ognb(server):
         try:
 
             # -----------------------------------------------------
-            # Create independent SSH channel
+            # 建立獨立 SSH channel
             # -----------------------------------------------------
-
-            transport = (
-                self.ssh_session
-                .get_transport()
-            )
-
-            if transport is None:
-                print(
-                    "[Netconf] "
-                    "Cannot get SSH transport"
-                )
-
-                return
 
             self.netconf_session = (
-                transport.open_session()
+                self.create_ssh_channel()
             )
 
-            self.netconf_session.get_pty()
-
-            self.netconf_session.invoke_shell()
-
-            time.sleep(1)
-
             # -----------------------------------------------------
-            # Clear login message
-            # -----------------------------------------------------
-
-            while (
-                    self.netconf_session
-                            .recv_ready()
-            ):
-                self.netconf_session.recv(
-                    4096
-                )
-
-            # -----------------------------------------------------
-            # Find netconf trace log
+            # 找 netconf trace log
             # -----------------------------------------------------
 
             self.netconf_session.send(
@@ -169,23 +213,23 @@ class ognb(server):
                 "*oru_cntrl_netconf_trace*.log\n"
             )
 
-            time.sleep(2)
+            time.sleep(1)
 
             data = ""
 
-            while (
-                    self.netconf_session
-                            .recv_ready()
-            ):
-                data += (
+            while self.netconf_session.recv_ready():
 
+                data += (
                     self.netconf_session
                     .recv(4096)
                     .decode(
                         errors="ignore"
                     )
-
                 )
+
+            # -----------------------------------------------------
+            # 找 log file
+            # -----------------------------------------------------
 
             log_file = None
 
@@ -194,23 +238,26 @@ class ognb(server):
                 line = line.strip()
 
                 if (
-                        "oru_cntrl_netconf_trace"
-                        in line
-                        and
-                        line.endswith(".log")
+                        line.startswith("/workspace/logs/")
+                        and "oru_cntrl_netconf_trace" in line
+                        and line.endswith(".log")
                 ):
                     log_file = line
-
                     break
 
             # -----------------------------------------------------
-            # Log not found
+            # 找不到 log
             # -----------------------------------------------------
 
             if log_file is None:
-                self.add_netconf_log(
+
+                message = (
                     "ERROR: Cannot find "
                     "oru_cntrl_netconf_trace*.log"
+                )
+
+                self.add_netconf_log(
+                    message
                 )
 
                 print(
@@ -218,19 +265,14 @@ class ognb(server):
                     "Cannot find trace log"
                 )
 
+                self.netconf_session.close()
+
+                self.netconf_session = None
+
                 return
 
-            self.add_netconf_log(
-                f"Monitoring: {log_file}"
-            )
-
-            print(
-                f"[Netconf] "
-                f"Monitoring {log_file}"
-            )
-
             # -----------------------------------------------------
-            # Start tail
+            # 開始 tail
             # -----------------------------------------------------
 
             self.netconf_session.send(
@@ -239,33 +281,47 @@ class ognb(server):
 
             self.netconf_running = True
 
+            self.add_netconf_log(
+                f"Monitoring: {log_file}"
+            )
+
+            print(
+                "[Netconf] "
+                f"Monitoring {log_file}"
+            )
+
             # -----------------------------------------------------
             # Start thread
             # -----------------------------------------------------
 
             self.netconf_thread = (
                 threading.Thread(
-
                     target=self.scan_netconf_log,
-
                     daemon=True
-
                 )
             )
 
             self.netconf_thread.start()
 
-
         except Exception as e:
 
             print(
-                f"[Netconf] "
+                "[Netconf] "
                 f"Monitor start failed: {e}"
             )
 
             self.add_netconf_log(
                 f"ERROR: {e}"
             )
+
+            if self.netconf_session:
+
+                try:
+                    self.netconf_session.close()
+                except Exception:
+                    pass
+
+                self.netconf_session = None
 
     # =========================================================
     # Scan Netconf Log
@@ -279,25 +335,17 @@ class ognb(server):
 
             try:
 
-                if (
-                        self.netconf_session
-                        is None
-                ):
+                if self.netconf_session is None:
                     break
 
-                while (
-                        self.netconf_session
-                                .recv_ready()
-                ):
+                while self.netconf_session.recv_ready():
 
                     data = (
-
                         self.netconf_session
                         .recv(4096)
                         .decode(
                             errors="ignore"
                         )
-
                     )
 
                     if not data:
@@ -321,8 +369,7 @@ class ognb(server):
                         timestamp = (
                             datetime.now()
                             .strftime(
-                                "%Y-%m-%d "
-                                "%H:%M:%S"
+                                "%Y-%m-%d %H:%M:%S"
                             )
                         )
 
@@ -330,6 +377,10 @@ class ognb(server):
                             f"[{timestamp}] "
                             f"{line}"
                         )
+
+                        # -----------------------------------------
+                        # 儲存在 memory
+                        # -----------------------------------------
 
                         self.add_netconf_log(
                             log_line
@@ -384,11 +435,8 @@ class ognb(server):
         if self.netconf_session:
 
             try:
-
                 self.netconf_session.close()
-
             except Exception:
-
                 pass
 
             self.netconf_session = None
@@ -403,6 +451,7 @@ class ognb(server):
     ):
 
         if self.rumanager_running:
+
             print(
                 "[RU Manager] "
                 "Monitor already running"
@@ -413,46 +462,15 @@ class ognb(server):
         try:
 
             # -----------------------------------------------------
-            # Create independent SSH channel
+            # 建立獨立 SSH channel
             # -----------------------------------------------------
-
-            transport = (
-                self.ssh_session
-                .get_transport()
-            )
-
-            if transport is None:
-                print(
-                    "[RU Manager] "
-                    "Cannot get SSH transport"
-                )
-
-                return
 
             self.rumanager_session = (
-                transport.open_session()
+                self.create_ssh_channel()
             )
 
-            self.rumanager_session.get_pty()
-
-            self.rumanager_session.invoke_shell()
-
-            time.sleep(1)
-
             # -----------------------------------------------------
-            # Clear login message
-            # -----------------------------------------------------
-
-            while (
-                    self.rumanager_session
-                            .recv_ready()
-            ):
-                self.rumanager_session.recv(
-                    4096
-                )
-
-            # -----------------------------------------------------
-            # Start tail
+            # tail RU Manager log
             # -----------------------------------------------------
 
             self.rumanager_session.send(
@@ -472,27 +490,32 @@ class ognb(server):
 
             self.rumanager_thread = (
                 threading.Thread(
-
                     target=self.scan_rumanager_log,
-
                     daemon=True
-
                 )
             )
 
             self.rumanager_thread.start()
 
-
         except Exception as e:
 
             print(
-                f"[RU Manager] "
+                "[RU Manager] "
                 f"Monitor start failed: {e}"
             )
 
             self.add_rumanager_log(
                 f"ERROR: {e}"
             )
+
+            if self.rumanager_session:
+
+                try:
+                    self.rumanager_session.close()
+                except Exception:
+                    pass
+
+                self.rumanager_session = None
 
     # =========================================================
     # Scan RU Manager Log
@@ -506,25 +529,17 @@ class ognb(server):
 
             try:
 
-                if (
-                        self.rumanager_session
-                        is None
-                ):
+                if self.rumanager_session is None:
                     break
 
-                while (
-                        self.rumanager_session
-                                .recv_ready()
-                ):
+                while self.rumanager_session.recv_ready():
 
                     data = (
-
                         self.rumanager_session
                         .recv(4096)
                         .decode(
                             errors="ignore"
                         )
-
                     )
 
                     if not data:
@@ -548,8 +563,7 @@ class ognb(server):
                         timestamp = (
                             datetime.now()
                             .strftime(
-                                "%Y-%m-%d "
-                                "%H:%M:%S"
+                                "%Y-%m-%d %H:%M:%S"
                             )
                         )
 
@@ -559,18 +573,7 @@ class ognb(server):
                         )
 
                         # -----------------------------------------
-                        # Console
-                        # -----------------------------------------
-
-                        # print(
-                        #     f"[RU Manager] "
-                        #     f"{log_line}"
-                        # )
-
-                        # -----------------------------------------
                         # Memory only
-                        #
-                        # 不寫 SQLite
                         # -----------------------------------------
 
                         self.add_rumanager_log(
@@ -578,7 +581,6 @@ class ognb(server):
                         )
 
                 time.sleep(0.2)
-
 
             except Exception as e:
 
@@ -627,17 +629,88 @@ class ognb(server):
         if self.rumanager_session:
 
             try:
-
                 self.rumanager_session.close()
-
             except Exception:
-
                 pass
 
             self.rumanager_session = None
 
     # =========================================================
     # Throughput Monitor
+    #
+    # 使用第三個獨立 SSH channel
+    # =========================================================
+
+    def start_throughput_monitor(
+            self,
+            log_path="/workspace/logs/l1_log_tdd"
+    ):
+
+        if self.throughput_running:
+
+            print(
+                "[Throughput] "
+                "Monitor already running"
+            )
+
+            return
+
+        try:
+
+            # -----------------------------------------------------
+            # 建立第三個獨立 SSH channel
+            # -----------------------------------------------------
+
+            self.throughput_session = (
+                self.create_ssh_channel()
+            )
+
+            # -----------------------------------------------------
+            # tail throughput log
+            # -----------------------------------------------------
+
+            self.throughput_session.send(
+                f"tail -F {log_path}\n"
+            )
+
+            self.throughput_running = True
+
+            print(
+                "[Throughput] "
+                f"Monitoring {log_path}"
+            )
+
+            # -----------------------------------------------------
+            # Start thread
+            # -----------------------------------------------------
+
+            self.throughput_thread = (
+                threading.Thread(
+                    target=self.scan_throughput,
+                    daemon=True
+                )
+            )
+
+            self.throughput_thread.start()
+
+        except Exception as e:
+
+            print(
+                "[Throughput] "
+                f"Monitor start failed: {e}"
+            )
+
+            if self.throughput_session:
+
+                try:
+                    self.throughput_session.close()
+                except Exception:
+                    pass
+
+                self.throughput_session = None
+
+    # =========================================================
+    # Scan Throughput
     # =========================================================
 
     def scan_throughput(
@@ -650,303 +723,385 @@ class ognb(server):
             f"Monitoring {log_path}"
         )
 
-        # ---------------------------------------------------------
-        # Start Netconf
-        # ---------------------------------------------------------
+        try:
 
-        self.start_netconf_monitor()
+            # ==========================================
+            # Throughput SSH session
+            # ==========================================
 
-        # ---------------------------------------------------------
-        # Start RU Manager
-        # ---------------------------------------------------------
-
-        self.start_rumanager_monitor()
-
-        # ---------------------------------------------------------
-        # Throughput uses main SSH session
-        # ---------------------------------------------------------
-
-        self.ssh_session.send(
-            f"tail -F {log_path}\n"
-        )
-
-        buffer = ""
-
-        while True:
-
-            # =====================================================
-            # Throughput timeout
-            # =====================================================
-
-            if (
-                    time.time()
-                    -
-                    self.last_throughput_time
-                    >
-                    30
-            ):
-                timestamp = (
-                    datetime.now()
-                    .strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                )
-
+            if self.ssh_session is None:
                 print(
-                    f"[{timestamp}] "
-                    "No throughput data, "
-                    "gNB may crash"
+                    "[Throughput] "
+                    "SSH session is None"
                 )
 
-                # -------------------------------------------------
-                # Cell 0
-                # -------------------------------------------------
+                return
 
-                self.db.insert_throughput(
+            # ==========================================
+            # Start tail
+            # ==========================================
 
-                    gnb_ip=self.ip_address,
+            command = (
+                f"tail -F {log_path}\n"
+            )
 
-                    cell_id=0,
+            print(
+                "[Throughput] "
+                f"Sending command: {command.strip()}"
+            )
 
-                    dl_throughput=0,
+            self.ssh_session.send(
+                command
+            )
 
-                    ul_throughput=0,
+            print(
+                "[Throughput] "
+                "tail command sent"
+            )
 
-                    ul_bler=0
+            buffer = ""
 
-                )
+            # ==========================================
+            # Monitor loop
+            # ==========================================
 
-                # -------------------------------------------------
-                # Cell 1
-                # -------------------------------------------------
+            while True:
 
-                self.db.insert_throughput(
+                # --------------------------------------
+                # Timeout
+                # --------------------------------------
 
-                    gnb_ip=self.ip_address,
+                if (
+                        time.time()
+                        -
+                        self.last_throughput_time
+                        >
+                        30
+                ):
+                    timestamp = (
+                        datetime.now()
+                        .strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                    )
 
-                    cell_id=1,
+                    print(
+                        f"[{timestamp}] "
+                        "No throughput data, "
+                        "gNB may crash"
+                    )
 
-                    dl_throughput=0,
+                    self.db.insert_throughput(
+                        gnb_ip=self.ip_address,
+                        cell_id=0,
+                        dl_throughput=0,
+                        ul_throughput=0,
+                        ul_bler=0
+                    )
 
-                    ul_throughput=0,
+                    self.db.insert_throughput(
+                        gnb_ip=self.ip_address,
+                        cell_id=1,
+                        dl_throughput=0,
+                        ul_throughput=0,
+                        ul_bler=0
+                    )
 
-                    ul_bler=0
+                    self.last_throughput_time = (
+                        time.time()
+                    )
 
-                )
+                # --------------------------------------
+                # Receive SSH data
+                # --------------------------------------
 
-                self.last_throughput_time = (
-                    time.time()
-                )
-
-            # =====================================================
-            # Receive throughput data
-            # =====================================================
-
-            while self.ssh_session.recv_ready():
-
-                try:
+                if self.ssh_session.recv_ready():
 
                     data = (
-
                         self.ssh_session
                         .recv(4096)
                         .decode(
                             errors="ignore"
                         )
-
                     )
 
-                except Exception as e:
-
-                    print(
-                        "[Throughput] "
-                        f"SSH recv error: {e}"
-                    )
-
-                    break
-
-                if not data:
-                    break
-
-                buffer += data
-
-                lines = buffer.split(
-                    "\n"
-                )
-
-                buffer = lines[-1]
-
-                for line in lines[:-1]:
-
-                    # -------------------------------------------------
-                    # Cell detection
-                    # -------------------------------------------------
-
-                    if "0 (MU " in line:
-
-                        cell_id = 0
-
-                    elif "1 (MU " in line:
-
-                        cell_id = 1
-
-                    else:
-
-                        continue
-
-                    try:
-
-                        parts = line.split("|")
-
-                        if len(parts) <= 4:
-                            continue
-
-                        # =================================================
-                        # DL
-                        # =================================================
-
-                        dl_field = (
-                            parts[3]
-                            .strip()
-                        )
-
-                        dl_values = (
-                            dl_field.split()
-                        )
-
-                        if not dl_values:
-                            continue
-
-                        dl_throughput = (
-
-                                float(
-                                    dl_values[0]
-                                    .replace(
-                                        ",",
-                                        ""
-                                    )
-                                )
-                                / 1000
-
-                        )
-
-                        # =================================================
-                        # UL
-                        # =================================================
-
-                        ul_field = (
-                            parts[4]
-                            .strip()
-                        )
-
-                        ul_values = (
-                            ul_field.split()
-                        )
-
-                        if len(ul_values) < 4:
-                            continue
-
-                        ul_throughput = (
-
-                                float(
-                                    ul_values[0]
-                                    .replace(
-                                        ",",
-                                        ""
-                                    )
-                                )
-                                / 1000
-
-                        )
-
-                        # =================================================
-                        # UL BLER
-                        # =================================================
-
-                        ul_bler = float(
-
-                            ul_values[3]
-                            .replace(
-                                "%",
-                                ""
-                            )
-
-                        )
-
-                        # =================================================
-                        # Update timestamp
-                        # =================================================
-
-                        self.last_throughput_time = (
-                            time.time()
-                        )
-
-                        # =================================================
-                        # Database
-                        # =================================================
-
-                        self.db.insert_throughput(
-
-                            gnb_ip=self.ip_address,
-
-                            cell_id=cell_id,
-
-                            dl_throughput=(
-                                dl_throughput
-                            ),
-
-                            ul_throughput=(
-                                ul_throughput
-                            ),
-
-                            ul_bler=(
-                                ul_bler
-                            )
-
-                        )
-
-                        # =================================================
-                        # Debug
-                        # =================================================
-
-                        timestamp = (
-                            datetime.now()
-                            .strftime(
-                                "%Y-%m-%d "
-                                "%H:%M:%S"
-                            )
-                        )
+                    if data:
 
                         # print(
-                        #
-                        #     f"[{timestamp}] "
-                        #
-                        #     f"Cell-{cell_id} "
-                        #
-                        #     f"DL="
-                        #     f"{dl_throughput:.3f} "
-                        #     f"Mbps "
-                        #
-                        #     f"UL="
-                        #     f"{ul_throughput:.3f} "
-                        #     f"Mbps "
-                        #
-                        #     f"BLER="
-                        #     f"{ul_bler:.2f}%"
-                        #
+                        #     "[Throughput DEBUG] "
+                        #     f"Received {len(data)} bytes"
                         # )
 
+                        buffer += data
 
-                    except (
-                            IndexError,
-                            ValueError,
-                            TypeError
-                    ):
+                        lines = buffer.split(
+                            "\n"
+                        )
 
-                        continue
+                        buffer = lines[-1]
 
-            # =====================================================
-            # CPU protection
-            # =====================================================
+                        for line in lines[:-1]:
 
-            time.sleep(1)
+                            line = line.rstrip()
+
+                            if not line:
+                                continue
+
+                            # ------------------------------
+                            # DEBUG
+                            # ------------------------------
+
+                            # print(
+                            #     "[Throughput DEBUG] "
+                            #     f"{line}"
+                            # )
+
+                            # ------------------------------
+                            # Cell
+                            # ------------------------------
+
+                            if "0 (MU " in line:
+
+                                cell_id = 0
+
+                            elif "1 (MU " in line:
+
+                                cell_id = 1
+
+                            else:
+
+                                continue
+
+                            try:
+
+                                parts = line.split("|")
+
+                                if len(parts) <= 4:
+                                    continue
+
+                                # --------------------------
+                                # DL
+                                # --------------------------
+
+                                dl_field = (
+                                    parts[3]
+                                    .strip()
+                                )
+
+                                dl_values = (
+                                    dl_field.split()
+                                )
+
+                                if not dl_values:
+                                    continue
+
+                                dl_throughput = (
+
+                                        float(
+                                            dl_values[0]
+                                            .replace(
+                                                ",",
+                                                ""
+                                            )
+                                        )
+                                        / 1000
+                                )
+
+                                # --------------------------
+                                # UL
+                                # --------------------------
+
+                                ul_field = (
+                                    parts[4]
+                                    .strip()
+                                )
+
+                                ul_values = (
+                                    ul_field.split()
+                                )
+
+                                if len(ul_values) < 4:
+                                    continue
+
+                                ul_throughput = (
+
+                                        float(
+                                            ul_values[0]
+                                            .replace(
+                                                ",",
+                                                ""
+                                            )
+                                        )
+                                        / 1000
+                                )
+
+                                # --------------------------
+                                # BLER
+                                # --------------------------
+
+                                ul_bler = float(
+                                    ul_values[3]
+                                    .replace(
+                                        "%",
+                                        ""
+                                    )
+                                )
+
+                                # --------------------------
+                                # Update timestamp
+                                # --------------------------
+
+                                self.last_throughput_time = (
+                                    time.time()
+                                )
+
+                                # --------------------------
+                                # DB
+                                # --------------------------
+
+                                self.db.insert_throughput(
+
+                                    gnb_ip=(
+                                        self.ip_address
+                                    ),
+
+                                    cell_id=cell_id,
+
+                                    dl_throughput=(
+                                        dl_throughput
+                                    ),
+
+                                    ul_throughput=(
+                                        ul_throughput
+                                    ),
+
+                                    ul_bler=(
+                                        ul_bler
+                                    )
+                                )
+
+                                # --------------------------
+                                # Debug
+                                # --------------------------
+
+                                # timestamp = (
+                                #     datetime.now()
+                                #     .strftime(
+                                #         "%Y-%m-%d "
+                                #         "%H:%M:%S"
+                                #     )
+                                # )
+                                #
+                                # print(
+                                #     f"[{timestamp}] "
+                                #     f"Cell-{cell_id} "
+                                #     f"DL="
+                                #     f"{dl_throughput:.3f} "
+                                #     f"Mbps "
+                                #     f"UL="
+                                #     f"{ul_throughput:.3f} "
+                                #     f"Mbps "
+                                #     f"BLER="
+                                #     f"{ul_bler:.2f}%"
+                                # )
+
+                            except Exception as e:
+
+                                print(
+                                    "[Throughput Parser ERROR] "
+                                    f"{repr(e)}"
+                                )
+
+                                traceback.print_exc()
+
+                time.sleep(0.2)
+
+        except Exception as e:
+
+            print(
+                "[Throughput FATAL ERROR] "
+                f"{repr(e)}"
+            )
+
+            traceback.print_exc()
+
+            raise
+
+    # =========================================================
+    # Stop Throughput Monitor
+    # =========================================================
+
+    def stop_throughput_monitor(self):
+
+        self.throughput_running = False
+
+        if self.throughput_session:
+
+            try:
+                self.throughput_session.close()
+            except Exception:
+                pass
+
+            self.throughput_session = None
+
+    # =========================================================
+    # Start All Monitors
+    #
+    # 建立 3 個獨立 SSH channel
+    #
+    # Channel 1 -> Throughput
+    # Channel 2 -> Netconf
+    # Channel 3 -> RU Manager
+    # =========================================================
+
+    def start_all_monitors(self):
+
+        print(
+            "[gNB Monitor] "
+            "Starting all monitors..."
+        )
+
+        # ---------------------------------------------------------
+        # Throughput
+        # ---------------------------------------------------------
+
+        self.start_throughput_monitor()
+
+        # ---------------------------------------------------------
+        # Netconf
+        # ---------------------------------------------------------
+
+        self.start_netconf_monitor()
+
+        # ---------------------------------------------------------
+        # RU Manager
+        # ---------------------------------------------------------
+
+        self.start_rumanager_monitor()
+
+        print(
+            "[gNB Monitor] "
+            "All monitors started"
+        )
+
+    # =========================================================
+    # Stop All Monitors
+    # =========================================================
+
+    def stop_all_monitors(self):
+
+        print(
+            "[gNB Monitor] "
+            "Stopping all monitors..."
+        )
+
+        self.stop_throughput_monitor()
+
+        self.stop_netconf_monitor()
+
+        self.stop_rumanager_monitor()
+
+        print(
+            "[gNB Monitor] "
+            "All monitors stopped"
+        )
