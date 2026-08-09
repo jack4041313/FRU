@@ -77,7 +77,10 @@ def logs():
     return jsonify({
 
         "netconf":
-            gnb.get_netconf_logs()
+            gnb.get_netconf_logs(),
+
+        "rumanager":
+            gnb.get_rumanager_logs()
 
     })
 

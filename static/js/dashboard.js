@@ -258,7 +258,7 @@ setInterval(
 
 
 //=====================================
-// log viewer
+// Update Logs
 //=====================================
 
 function updateLogs() {
@@ -282,71 +282,149 @@ function updateLogs() {
         .then(data => {
 
             console.log(
-                "NETCONF LOG DATA:",
+                "LOG DATA:",
                 data
             );
 
-            const consoleElement =
+
+            //=====================================
+            // Netconf Server
+            //=====================================
+
+            const netconfConsole =
                 document.getElementById(
                     "netconfConsole"
                 );
 
-            if (!consoleElement) {
 
-                console.error(
-                    "netconfConsole element not found"
-                );
+            if (netconfConsole) {
 
-                return;
+                //=================================
+                // Check whether user is already
+                // near the bottom
+                //=================================
 
-            }
-
-
-            //=====================================
-            // Check whether user is already
-            // near the bottom
-            //=====================================
-
-            const isAtBottom =
-                consoleElement.scrollHeight -
-                consoleElement.scrollTop -
-                consoleElement.clientHeight <
-                50;
+                const netconfAtBottom =
+                    netconfConsole.scrollHeight -
+                    netconfConsole.scrollTop -
+                    netconfConsole.clientHeight <
+                    50;
 
 
-            //=====================================
-            // Update log content
-            //=====================================
+                //=================================
+                // Update Netconf log
+                //=================================
 
-            if (
-                data.netconf !== undefined &&
-                data.netconf !== null
-            ) {
+                if (
+                    data.netconf !== undefined &&
+                    data.netconf !== null
+                ) {
 
-                consoleElement.textContent =
-                    data.netconf;
+                    netconfConsole.textContent =
+                        data.netconf;
+
+                }
+
+                else {
+
+                    netconfConsole.textContent =
+                        "No netconf log data";
+
+                }
+
+
+                //=================================
+                // Auto scroll Netconf
+                //
+                // Only scroll if user was already
+                // near the bottom
+                //=================================
+
+                if (netconfAtBottom) {
+
+                    netconfConsole.scrollTop =
+                        netconfConsole.scrollHeight;
+
+                }
 
             }
 
             else {
 
-                consoleElement.textContent =
-                    "No netconf log data";
+                console.error(
+                    "netconfConsole element not found"
+                );
 
             }
 
 
             //=====================================
-            // Auto scroll
-            //
-            // Only scroll automatically if the
-            // user was already near the bottom.
+            // RU Manager
             //=====================================
 
-            if (isAtBottom) {
+            const rumanagerConsole =
+                document.getElementById(
+                    "rumanagerConsole"
+                );
 
-                consoleElement.scrollTop =
-                    consoleElement.scrollHeight;
+
+            if (rumanagerConsole) {
+
+                //=================================
+                // Check whether user is already
+                // near the bottom
+                //=================================
+
+                const rumanagerAtBottom =
+                    rumanagerConsole.scrollHeight -
+                    rumanagerConsole.scrollTop -
+                    rumanagerConsole.clientHeight <
+                    50;
+
+
+                //=================================
+                // Update RU Manager log
+                //=================================
+
+                if (
+                    data.rumanager !== undefined &&
+                    data.rumanager !== null
+                ) {
+
+                    rumanagerConsole.textContent =
+                        data.rumanager;
+
+                }
+
+                else {
+
+                    rumanagerConsole.textContent =
+                        "No RU Manager log data";
+
+                }
+
+
+                //=================================
+                // Auto scroll RU Manager
+                //
+                // Only scroll if user was already
+                // near the bottom
+                //=================================
+
+                if (rumanagerAtBottom) {
+
+                    rumanagerConsole.scrollTop =
+                        rumanagerConsole.scrollHeight;
+
+                }
+
+            }
+
+            else {
+
+                console.error(
+                    "rumanagerConsole element not found"
+                );
 
             }
 
@@ -355,7 +433,7 @@ function updateLogs() {
         .catch(error => {
 
             console.error(
-                "Failed to get netconf logs:",
+                "Failed to get logs:",
                 error
             );
 
@@ -365,15 +443,17 @@ function updateLogs() {
 
 
 //=====================================
-// Initial load
+// Initial Load
 //=====================================
+
 updateLogs();
 
 
 //=====================================
-// Refresh every 2 seconds
+// Refresh every 1 second
 //=====================================
+
 setInterval(
     updateLogs,
-    2000
+    1000
 );
