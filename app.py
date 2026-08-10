@@ -71,7 +71,9 @@ def logs():
     if gnb is None:
 
         return jsonify({
-            "netconf": []
+            "netconf": [],
+            "rumanager": [],
+            "uptime": "Unknown"
         })
 
     return jsonify({
@@ -80,7 +82,10 @@ def logs():
             gnb.get_netconf_logs(),
 
         "rumanager":
-            gnb.get_rumanager_logs()
+            gnb.get_rumanager_logs(),
+
+        "uptime":
+            gnb.get_uptime()
 
     })
 
@@ -92,7 +97,7 @@ if __name__ == "__main__":
     # ==========================================
 
     start_gnb_monitor_thread(
-        ip_address="10.255.174.7",
+        ip_address="10.255.175.105",
         username="ognb",
         password="ognb123",
         port=22
