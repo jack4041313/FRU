@@ -97,7 +97,7 @@ if __name__ == "__main__":
     # ==========================================
 
     start_gnb_monitor_thread(
-        ip_address="10.255.175.105",
+        ip_address="10.255.175.129",
         username="ognb",
         password="ognb123",
         port=22

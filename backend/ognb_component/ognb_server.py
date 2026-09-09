@@ -204,78 +204,116 @@ class ognb(server):
                 self.create_ssh_channel()
             )
 
+            if self.netconf_session is None:
+                raise RuntimeError(
+                    "Failed to create Netconf SSH channel"
+                )
+
             # -----------------------------------------------------
-            # 找 netconf trace log
+            # 持續尋找 netconf trace log
             # -----------------------------------------------------
 
-            self.netconf_session.send(
-                "ls /workspace/logs/"
-                "*oru_cntrl_netconf_trace*.log\n"
-            )
+            while True:
 
-            time.sleep(1)
+                # -------------------------------------------------
+                # 清除目前 channel buffer
+                # -------------------------------------------------
 
-            data = ""
-
-            while self.netconf_session.recv_ready():
-                data += (
-                    self.netconf_session
-                    .recv(4096)
-                    .decode(
-                        errors="ignore"
+                while self.netconf_session.recv_ready():
+                    self.netconf_session.recv(
+                        4096
                     )
+
+                # -------------------------------------------------
+                # 找 netconf trace log
+                # -------------------------------------------------
+
+                self.netconf_session.send(
+                    "ls /workspace/logs/"
+                    "*oru_cntrl_netconf_trace*.log\n"
                 )
 
-            # -----------------------------------------------------
-            # 找 log file
-            # -----------------------------------------------------
+                time.sleep(1)
 
-            log_file = None
+                data = ""
 
-            for line in data.splitlines():
+                while self.netconf_session.recv_ready():
 
-                line = line.strip()
+                    chunk = (
+                        self.netconf_session
+                        .recv(4096)
+                        .decode(
+                            errors="ignore"
+                        )
+                    )
 
-                if (
-                        line.startswith("/workspace/logs/")
-                        and "oru_cntrl_netconf_trace" in line
-                        and line.endswith(".log")
-                ):
-                    log_file = line
-                    break
+                    if not chunk:
+                        break
 
-            # -----------------------------------------------------
-            # 找不到 log
-            # -----------------------------------------------------
+                    data += chunk
 
-            if log_file is None:
-                message = (
-                    "ERROR: Cannot find "
-                    "oru_cntrl_netconf_trace*.log"
-                )
+                # -------------------------------------------------
+                # 找 log file
+                # -------------------------------------------------
 
-                self.add_netconf_log(
-                    message
-                )
+                log_file = None
+
+                for line in data.splitlines():
+
+                    line = line.strip()
+
+                    if (
+                            line.startswith("/workspace/logs/")
+                            and
+                            "oru_cntrl_netconf_trace" in line
+                            and
+                            line.endswith(".log")
+                    ):
+                        log_file = line
+
+                        break
+
+                # -------------------------------------------------
+                # 找不到 log
+                # -------------------------------------------------
+
+                if log_file is None:
+                    print(
+                        "[Netconf] "
+                        "Cannot find trace log, "
+                        "retrying..."
+                    )
+
+                    self.add_netconf_log(
+                        "Waiting for Netconf trace log..."
+                    )
+
+                    time.sleep(2)
+
+                    continue
+
+                # -------------------------------------------------
+                # 找到了 log
+                # -------------------------------------------------
 
                 print(
                     "[Netconf] "
-                    "Cannot find trace log"
+                    f"Found trace log: {log_file}"
                 )
 
-                self.netconf_session.close()
-
-                self.netconf_session = None
-
-                return
+                break
 
             # -----------------------------------------------------
             # 開始 tail
             # -----------------------------------------------------
 
             self.netconf_session.send(
-                f"tail -F {log_file}\n"
+                f"tail -F -- {log_file}\n"
             )
+
+            # -----------------------------------------------------
+            # Monitor state
+            # -----------------------------------------------------
 
             self.netconf_running = True
 
@@ -292,11 +330,9 @@ class ognb(server):
             # Start thread
             # -----------------------------------------------------
 
-            self.netconf_thread = (
-                threading.Thread(
-                    target=self.scan_netconf_log,
-                    daemon=True
-                )
+            self.netconf_thread = threading.Thread(
+                target=self.scan_netconf_log,
+                daemon=True
             )
 
             self.netconf_thread.start()
@@ -312,14 +348,23 @@ class ognb(server):
                 f"ERROR: {e}"
             )
 
+            # -----------------------------------------------------
+            # Cleanup
+            # -----------------------------------------------------
+
+            self.netconf_running = False
+
             if self.netconf_session:
 
                 try:
                     self.netconf_session.close()
+
                 except Exception:
                     pass
 
                 self.netconf_session = None
+
+            self.netconf_thread = None
 
     # =========================================================
     # Scan Netconf Log
@@ -351,9 +396,7 @@ class ognb(server):
 
                     buffer += data
 
-                    lines = buffer.split(
-                        "\n"
-                    )
+                    lines = buffer.split("\n")
 
                     buffer = lines[-1]
 
@@ -363,6 +406,75 @@ class ognb(server):
 
                         if not line:
                             continue
+
+                        # -----------------------------------------
+                        # 檢查 tail 是否因為 log file 消失而失敗
+                        # -----------------------------------------
+
+                        if (
+                                "No such file or directory"
+                                in line
+                                or
+                                "has become inaccessible"
+                                in line
+                        ):
+
+                            print(
+                                "[Netconf] "
+                                "Log file disappeared, "
+                                "searching for new log file..."
+                            )
+
+                            self.add_netconf_log(
+                                "Netconf log file disappeared, "
+                                "searching for new log file..."
+                            )
+
+                            # -------------------------------------
+                            # 停止目前 monitor
+                            # -------------------------------------
+
+                            self.netconf_running = False
+
+                            # -------------------------------------
+                            # 關閉目前 SSH channel
+                            # -------------------------------------
+
+                            try:
+
+                                self.netconf_session.close()
+
+                            except Exception:
+                                pass
+
+                            self.netconf_session = None
+
+                            # -------------------------------------
+                            # 清除 buffer
+                            # -------------------------------------
+
+                            buffer = ""
+
+                            # -------------------------------------
+                            # 等待 gNB 建立新的 log file
+                            # -------------------------------------
+
+                            time.sleep(2)
+
+                            # -------------------------------------
+                            # 重新啟動 Netconf monitor
+                            #
+                            # start_netconf_monitor()
+                            # 會持續搜尋直到找到新的 log
+                            # -------------------------------------
+
+                            self.start_netconf_monitor()
+
+                            return
+
+                        # -----------------------------------------
+                        # 正常 log
+                        # -----------------------------------------
 
                         timestamp = (
                             datetime.now()
@@ -392,7 +504,49 @@ class ognb(server):
                     f"ERROR: {e}"
                 )
 
-                break
+                print(
+                    "[Netconf] "
+                    f"Monitor error: {e}"
+                )
+
+                # -----------------------------------------
+                # 停止目前 monitor
+                # -----------------------------------------
+
+                self.netconf_running = False
+
+                # -----------------------------------------
+                # 關閉目前 SSH channel
+                # -----------------------------------------
+
+                if self.netconf_session:
+
+                    try:
+                        self.netconf_session.close()
+
+                    except Exception:
+                        pass
+
+                    self.netconf_session = None
+
+                # -----------------------------------------
+                # 清除 buffer
+                # -----------------------------------------
+
+                buffer = ""
+
+                # -----------------------------------------
+                # 等待後重新啟動
+                #
+                # start_netconf_monitor()
+                # 會持續搜尋直到找到 log
+                # -----------------------------------------
+
+                time.sleep(2)
+
+                self.start_netconf_monitor()
+
+                return
 
         print(
             "[Netconf] "
@@ -948,10 +1102,10 @@ class ognb(server):
                                         uptime
                                     )
 
-                                    print(
-                                        "[Up-Time] "
-                                        f"{self.uptime}"
-                                    )
+                                    # print(
+                                    #     "[Up-Time] "
+                                    #     f"{self.uptime}"
+                                    # )
 
                             except Exception as e:
 
