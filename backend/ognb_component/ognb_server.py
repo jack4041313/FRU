@@ -807,6 +807,14 @@ class ognb(server):
                         ul_bler=0
                     )
 
+                    self.db.insert_throughput(
+                        gnb_ip=self.ip_address,
+                        cell_id=2,
+                        dl_throughput=0,
+                        ul_throughput=0,
+                        ul_bler=0
+                    )
+
                     self.last_throughput_time = (
                         time.time()
                     )
@@ -867,6 +875,10 @@ class ognb(server):
                             elif "1 (MU " in line:
 
                                 cell_id = 1
+
+                            elif "2 (MU " in line:
+
+                                cell_id = 2
 
                             else:
 

@@ -1,4 +1,3 @@
-```javascript
 // Default time range
 let range = "10m";
 
@@ -495,4 +494,4 @@ setInterval(
     updateLogs,
     1000
 );
-```
+
