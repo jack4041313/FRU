@@ -49,6 +49,18 @@ def throughput():
             duration=duration,
             cell_id=1,
             column="ul_throughput"
+        ),
+
+        "cell2_dl": db.get_throughput_history(
+            duration=duration,
+            cell_id=2,
+            column="dl_throughput"
+        ),
+
+        "cell2_ul": db.get_throughput_history(
+            duration=duration,
+            cell_id=2,
+            column="ul_throughput"
         )
 
     })
@@ -92,7 +104,7 @@ if __name__ == "__main__":
     # ==========================================
 
     start_gnb_monitor_thread(
-        ip_address="10.255.174.7",
+        ip_address="10.255.174.239",
         username="ognb",
         password="ognb123",
         port=22

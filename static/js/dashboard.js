@@ -1,3 +1,4 @@
+```javascript
 // Default time range
 let range = "10m";
 
@@ -11,43 +12,43 @@ function createChart(
     label,
     color,
     bgColor
-){
+) {
 
     return new Chart(
         document.getElementById(element),
         {
 
-            type:"line",
+            type: "line",
 
-            data:{
+            data: {
 
-                labels:[],
+                labels: [],
 
-                datasets:[
+                datasets: [
 
                     {
-                        label:label,
+                        label: label,
 
-                        data:[],
+                        data: [],
 
-                        borderColor:color,
+                        borderColor: color,
 
-                        backgroundColor:bgColor,
+                        backgroundColor: bgColor,
 
-                        tension:0.3,
+                        tension: 0.3,
 
-                        fill:true
+                        fill: true
                     }
 
                 ]
 
             },
 
-            options:{
+            options: {
 
-                responsive:true,
+                responsive: true,
 
-                maintainAspectRatio:false
+                maintainAspectRatio: false
 
             }
 
@@ -57,59 +58,87 @@ function createChart(
 }
 
 
-
 //=============================
 // Charts
 //=============================
 
 
+//=====================================
 // Cell-0 DL
+//=====================================
 
 const cell0DlChart =
-createChart(
-    "cell0DlChart",
-    "Cell-0 DL Throughput (Mbps)",
-    "#38bdf8",
-    "rgba(56,189,248,0.15)"
-);
+    createChart(
+        "cell0DlChart",
+        "Cell-0 DL Throughput (Mbps)",
+        "#38bdf8",
+        "rgba(56,189,248,0.15)"
+    );
 
 
+//=====================================
 // Cell-0 UL
+//=====================================
 
 const cell0UlChart =
-createChart(
-    "cell0UlChart",
-    "Cell-0 UL Throughput (Mbps)",
-    "#22c55e",
-    "rgba(34,197,94,0.15)"
-);
+    createChart(
+        "cell0UlChart",
+        "Cell-0 UL Throughput (Mbps)",
+        "#22c55e",
+        "rgba(34,197,94,0.15)"
+    );
 
 
-
+//=====================================
 // Cell-1 DL
+//=====================================
 
 const cell1DlChart =
-createChart(
-    "cell1DlChart",
-    "Cell-1 DL Throughput (Mbps)",
-    "#f59e0b",
-    "rgba(245,158,11,0.15)"
-);
+    createChart(
+        "cell1DlChart",
+        "Cell-1 DL Throughput (Mbps)",
+        "#f59e0b",
+        "rgba(245,158,11,0.15)"
+    );
 
 
-
+//=====================================
 // Cell-1 UL
+//=====================================
 
 const cell1UlChart =
-createChart(
-    "cell1UlChart",
-    "Cell-1 UL Throughput (Mbps)",
-    "#ef4444",
-    "rgba(239,68,68,0.15)"
-);
+    createChart(
+        "cell1UlChart",
+        "Cell-1 UL Throughput (Mbps)",
+        "#ef4444",
+        "rgba(239,68,68,0.15)"
+    );
 
 
+//=====================================
+// Cell-2 DL
+//=====================================
 
+const cell2DlChart =
+    createChart(
+        "cell2DlChart",
+        "Cell-2 DL Throughput (Mbps)",
+        "#a855f7",
+        "rgba(168,85,247,0.15)"
+    );
+
+
+//=====================================
+// Cell-2 UL
+//=====================================
+
+const cell2UlChart =
+    createChart(
+        "cell2UlChart",
+        "Cell-2 UL Throughput (Mbps)",
+        "#14b8a6",
+        "rgba(20,184,166,0.15)"
+    );
 
 
 //=====================================
@@ -119,21 +148,21 @@ createChart(
 function updateChart(
     chart,
     data
-){
+) {
 
-    if(!data)
+    if (!data)
         return;
 
 
     chart.data.labels =
         data.map(
-            x=>x.time
+            x => x.time
         );
 
 
     chart.data.datasets[0].data =
         data.map(
-            x=>x.value
+            x => x.value
         );
 
 
@@ -142,79 +171,87 @@ function updateChart(
 }
 
 
-
-
-
 //=====================================
 // Update Throughput
 //=====================================
 
-function updateThroughput(){
-
+function updateThroughput() {
 
     fetch(
         "/api/throughput?range=" + range
     )
 
+        .then(
+            r => r.json()
+        )
 
-    .then(
-        r=>r.json()
-    )
+        .then(
+            data => {
 
-
-    .then(
-        data=>{
-
-
-            console.log(data);
-
-
-
-            //=========================
-            // DL
-            //=========================
+                console.log(
+                    "THROUGHPUT DATA:",
+                    data
+                );
 
 
-            updateChart(
-                cell0DlChart,
-                data.cell0_dl
-            );
+                //=========================
+                // DL
+                //=========================
+
+                updateChart(
+                    cell0DlChart,
+                    data.cell0_dl
+                );
 
 
-            updateChart(
-                cell1DlChart,
-                data.cell1_dl
-            );
+                updateChart(
+                    cell1DlChart,
+                    data.cell1_dl
+                );
 
 
+                updateChart(
+                    cell2DlChart,
+                    data.cell2_dl
+                );
 
 
-            //=========================
-            // UL
-            //=========================
+                //=========================
+                // UL
+                //=========================
+
+                updateChart(
+                    cell0UlChart,
+                    data.cell0_ul
+                );
 
 
-            updateChart(
-                cell0UlChart,
-                data.cell0_ul
-            );
+                updateChart(
+                    cell1UlChart,
+                    data.cell1_ul
+                );
 
 
-            updateChart(
-                cell1UlChart,
-                data.cell1_ul
-            );
+                updateChart(
+                    cell2UlChart,
+                    data.cell2_ul
+                );
 
+            }
+        )
 
-        }
+        .catch(
+            error => {
 
-    );
+                console.error(
+                    "Failed to get throughput:",
+                    error
+                );
+
+            }
+        );
 
 }
-
-
-
-
 
 
 //=====================================
@@ -222,33 +259,28 @@ function updateThroughput(){
 //=====================================
 
 document
-.getElementById("timeRange")
-.addEventListener(
-"change",
-function(){
+    .getElementById("timeRange")
+    .addEventListener(
+        "change",
+        function () {
 
-    range = this.value;
+            range = this.value;
 
+            updateThroughput();
 
-    updateThroughput();
-
-});
-
-
-
-
+        }
+    );
 
 
 //=====================================
-// Initial Load
+// Initial Throughput Load
 //=====================================
 
 updateThroughput();
 
 
-
 //=====================================
-// Refresh
+// Throughput Refresh
 //=====================================
 
 setInterval(
@@ -265,195 +297,202 @@ function updateLogs() {
 
     fetch("/api/logs")
 
-        .then(response => {
+        .then(
+            response => {
 
-            if (!response.ok) {
+                if (!response.ok) {
 
-                throw new Error(
-                    `HTTP error: ${response.status}`
-                );
+                    throw new Error(
+                        `HTTP error: ${response.status}`
+                    );
+
+                }
+
+                return response.json();
 
             }
+        )
 
-            return response.json();
+        .then(
+            data => {
 
-        })
-
-        .then(data => {
-
-            console.log(
-                "LOG DATA:",
-                data
-            );
-
-
-            //=====================================
-            // Netconf Server
-            //=====================================
-
-            const netconfConsole =
-                document.getElementById(
-                    "netconfConsole"
+                console.log(
+                    "LOG DATA:",
+                    data
                 );
 
 
-            if (netconfConsole) {
+                //=====================================
+                // Netconf Server
+                //=====================================
 
-                //=================================
-                // Check whether user is already
-                // near the bottom
-                //=================================
-
-                const netconfAtBottom =
-                    netconfConsole.scrollHeight -
-                    netconfConsole.scrollTop -
-                    netconfConsole.clientHeight <
-                    50;
+                const netconfConsole =
+                    document.getElementById(
+                        "netconfConsole"
+                    );
 
 
-                //=================================
-                // Update Netconf log
-                //=================================
+                if (netconfConsole) {
 
-                if (
-                    data.netconf !== undefined &&
-                    data.netconf !== null
-                ) {
+                    //=================================
+                    // Check whether user is already
+                    // near the bottom
+                    //=================================
 
-                    netconfConsole.textContent =
-                        data.netconf;
+                    const netconfAtBottom =
+                        netconfConsole.scrollHeight -
+                        netconfConsole.scrollTop -
+                        netconfConsole.clientHeight <
+                        50;
+
+
+                    //=================================
+                    // Update Netconf log
+                    //=================================
+
+                    if (
+                        data.netconf !== undefined &&
+                        data.netconf !== null
+                    ) {
+
+                        netconfConsole.textContent =
+                            data.netconf;
+
+                    }
+
+                    else {
+
+                        netconfConsole.textContent =
+                            "No netconf log data";
+
+                    }
+
+
+                    //=================================
+                    // Auto scroll Netconf
+                    //
+                    // Only scroll if user was already
+                    // near the bottom
+                    //=================================
+
+                    if (netconfAtBottom) {
+
+                        netconfConsole.scrollTop =
+                            netconfConsole.scrollHeight;
+
+                    }
 
                 }
 
                 else {
 
-                    netconfConsole.textContent =
-                        "No netconf log data";
+                    console.error(
+                        "netconfConsole element not found"
+                    );
 
                 }
 
 
-                //=================================
-                // Auto scroll Netconf
-                //
-                // Only scroll if user was already
-                // near the bottom
-                //=================================
+                //=====================================
+                // RU Manager
+                //=====================================
 
-                if (netconfAtBottom) {
-
-                    netconfConsole.scrollTop =
-                        netconfConsole.scrollHeight;
-
-                }
-
-            }
-
-            else {
-
-                console.error(
-                    "netconfConsole element not found"
-                );
-
-            }
+                const rumanagerConsole =
+                    document.getElementById(
+                        "rumanagerConsole"
+                    );
 
 
-            //=====================================
-            // RU Manager
-            //=====================================
+                if (rumanagerConsole) {
 
-            const rumanagerConsole =
-                document.getElementById(
-                    "rumanagerConsole"
-                );
+                    //=================================
+                    // Check whether user is already
+                    // near the bottom
+                    //=================================
 
-
-            if (rumanagerConsole) {
-
-                //=================================
-                // Check whether user is already
-                // near the bottom
-                //=================================
-
-                const rumanagerAtBottom =
-                    rumanagerConsole.scrollHeight -
-                    rumanagerConsole.scrollTop -
-                    rumanagerConsole.clientHeight <
-                    50;
+                    const rumanagerAtBottom =
+                        rumanagerConsole.scrollHeight -
+                        rumanagerConsole.scrollTop -
+                        rumanagerConsole.clientHeight <
+                        50;
 
 
-                //=================================
-                // Update RU Manager log
-                //=================================
+                    //=================================
+                    // Update RU Manager log
+                    //=================================
 
-                if (
-                    data.rumanager !== undefined &&
-                    data.rumanager !== null
-                ) {
+                    if (
+                        data.rumanager !== undefined &&
+                        data.rumanager !== null
+                    ) {
 
-                    rumanagerConsole.textContent =
-                        data.rumanager;
+                        rumanagerConsole.textContent =
+                            data.rumanager;
+
+                    }
+
+                    else {
+
+                        rumanagerConsole.textContent =
+                            "No RU Manager log data";
+
+                    }
+
+
+                    //=================================
+                    // Auto scroll RU Manager
+                    //
+                    // Only scroll if user was already
+                    // near the bottom
+                    //=================================
+
+                    if (rumanagerAtBottom) {
+
+                        rumanagerConsole.scrollTop =
+                            rumanagerConsole.scrollHeight;
+
+                    }
 
                 }
 
                 else {
 
-                    rumanagerConsole.textContent =
-                        "No RU Manager log data";
-
-                }
-
-
-                //=================================
-                // Auto scroll RU Manager
-                //
-                // Only scroll if user was already
-                // near the bottom
-                //=================================
-
-                if (rumanagerAtBottom) {
-
-                    rumanagerConsole.scrollTop =
-                        rumanagerConsole.scrollHeight;
+                    console.error(
+                        "rumanagerConsole element not found"
+                    );
 
                 }
 
             }
+        )
 
-            else {
+        .catch(
+            error => {
 
                 console.error(
-                    "rumanagerConsole element not found"
+                    "Failed to get logs:",
+                    error
                 );
 
             }
-
-        })
-
-        .catch(error => {
-
-            console.error(
-                "Failed to get logs:",
-                error
-            );
-
-        });
+        );
 
 }
 
 
 //=====================================
-// Initial Load
+// Initial Log Load
 //=====================================
 
 updateLogs();
 
 
 //=====================================
-// Refresh every 1 second
+// Log Refresh
 //=====================================
 
 setInterval(
     updateLogs,
     1000
 );
+```
