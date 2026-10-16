@@ -23,6 +23,14 @@ _gnb_pool = {}
 # =========================================================
 
 _gnb_pool_lock = threading.Lock()
+_gnb_starting = set()
+_gnb_stopping = set()
+_gnb_threads = {}
+
+
+def is_gnb_starting(ip_address):
+    with _gnb_pool_lock:
+        return ip_address in _gnb_starting
 
 
 # =========================================================
@@ -113,12 +121,12 @@ def start_netconf_monitor(gnb):
 # RU Manager Monitor
 # =========================================================
 
-def start_rumanager_monitor(gnb):
+def start_bootlog_monitor(gnb):
     """
     Start RU Manager log monitor.
 
     The actual monitoring is handled by
-    start_rumanager_monitor() inside ognb.
+    start_bootlog_monitor() inside ognb.
     """
 
     try:
@@ -129,7 +137,7 @@ def start_rumanager_monitor(gnb):
             f"{gnb.ip_address}"
         )
 
-        gnb.start_rumanager_monitor()
+        gnb.start_bootlog_monitor()
 
     except Exception as e:
 
@@ -321,7 +329,7 @@ def start_gnb_monitor(
 
     rumanager_thread = threading.Thread(
 
-        target=start_rumanager_monitor,
+        target=start_bootlog_monitor,
 
         args=(
             gnb,
@@ -334,6 +342,9 @@ def start_gnb_monitor(
     )
 
     rumanager_thread.start()
+
+    with _gnb_pool_lock:
+        _gnb_threads[ip_address] = [throughput_thread, netconf_thread, rumanager_thread]
 
     # =====================================================
     # Status
@@ -370,15 +381,29 @@ def start_gnb_monitor(
 # Start gNB monitor in background thread
 # =========================================================
 
+def _run_reserved_monitor(ip_address, username, password, port):
+    try:
+        start_gnb_monitor(ip_address, username, password, port)
+    finally:
+        with _gnb_pool_lock:
+            _gnb_starting.discard(ip_address)
+
+
 def start_gnb_monitor_thread(
         ip_address,
         username,
         password,
         port=22
 ):
+    with _gnb_pool_lock:
+        if ip_address in _gnb_pool or ip_address in _gnb_starting or ip_address in _gnb_stopping:
+            print(f"[gNB Monitor] Already running or connecting: {ip_address}")
+            return None
+        _gnb_starting.add(ip_address)
+
     monitor_thread = threading.Thread(
 
-        target=start_gnb_monitor,
+        target=_run_reserved_monitor,
 
         args=(
 
@@ -398,7 +423,12 @@ def start_gnb_monitor_thread(
 
     )
 
-    monitor_thread.start()
+    try:
+        monitor_thread.start()
+    except Exception:
+        with _gnb_pool_lock:
+            _gnb_starting.discard(ip_address)
+        raise
 
     print(
         f"[gNB Monitor] "
@@ -407,3 +437,47 @@ def start_gnb_monitor_thread(
     )
 
     return monitor_thread
+
+
+def stop_gnb_monitor(ip_address, timeout=5):
+    """Stop workers and SSH; remove from pool only after workers exit.
+
+    Returns (success, message). A connecting gNB must finish connecting first.
+    """
+    with _gnb_pool_lock:
+        if ip_address in _gnb_starting:
+            return False, "gNB is still connecting; retry removal shortly"
+        if ip_address in _gnb_stopping:
+            return False, "gNB is already stopping"
+        gnb = _gnb_pool.get(ip_address)
+        if gnb is None:
+            return True, "No active monitor"
+        _gnb_stopping.add(ip_address)
+
+    try:
+        gnb.stop_all_monitors()
+        threads = _gnb_threads.get(ip_address, [])
+        # Internal scan threads are started by ognb itself.
+        threads = threads + [getattr(gnb, name, None) for name in
+                             ("netconf_thread", "rumanager_thread", "throughput_thread")]
+        for thread in threads:
+            if thread and thread.is_alive() and thread is not threading.current_thread():
+                thread.join(timeout=timeout)
+        alive = [thread.name for thread in threads if thread and thread.is_alive()]
+        if alive:
+            return False, f"Monitor threads have not exited: {', '.join(alive)}"
+        with _gnb_pool_lock:
+            if _gnb_pool.get(ip_address) is gnb:
+                del _gnb_pool[ip_address]
+            _gnb_threads.pop(ip_address, None)
+        try:
+            gnb.db.conn.close()
+        except Exception:
+            pass
+        return True, "Stopped"
+    except Exception as exc:
+        traceback.print_exc()
+        return False, str(exc)
+    finally:
+        with _gnb_pool_lock:
+            _gnb_stopping.discard(ip_address)

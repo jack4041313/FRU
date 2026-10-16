@@ -1,6 +1,7 @@
 import time
 import threading
 import traceback
+import re
 
 from collections import deque
 from datetime import datetime
@@ -31,6 +32,7 @@ class ognb(server):
         # =========================================================
 
         self.db = GNBDatabase()
+        self.stop_event = threading.Event()
 
         # =========================================================
         # SSH Channels
@@ -55,6 +57,7 @@ class ognb(server):
         self.uptime = "Unknown"
 
         self.last_throughput_time = time.time()
+        self.observed_cell_ids = set()
 
         # =========================================================
         # Netconf
@@ -186,6 +189,9 @@ class ognb(server):
 
     def start_netconf_monitor(self):
 
+        if self.stop_event.is_set():
+            return
+
         if self.netconf_running:
             print(
                 "[Netconf] "
@@ -213,13 +219,13 @@ class ognb(server):
             # 持續尋找 netconf trace log
             # -----------------------------------------------------
 
-            while True:
+            while not self.stop_event.is_set():
 
                 # -------------------------------------------------
                 # 清除目前 channel buffer
                 # -------------------------------------------------
 
-                while self.netconf_session.recv_ready():
+                while not self.stop_event.is_set() and self.netconf_session.recv_ready():
                     self.netconf_session.recv(
                         4096
                     )
@@ -233,11 +239,12 @@ class ognb(server):
                     "*oru_cntrl_netconf_trace*.log\n"
                 )
 
-                time.sleep(1)
+                if self.stop_event.wait(1):
+                    return
 
                 data = ""
 
-                while self.netconf_session.recv_ready():
+                while not self.stop_event.is_set() and self.netconf_session.recv_ready():
 
                     chunk = (
                         self.netconf_session
@@ -279,16 +286,16 @@ class ognb(server):
 
                 if log_file is None:
                     print(
-                        "[Netconf] "
-                        "Cannot find trace log, "
-                        "retrying..."
+                        f"[Netconf][{self.ip_address}] "
+                        "Cannot find trace log, retrying..."
                     )
 
                     self.add_netconf_log(
                         "Waiting for Netconf trace log..."
                     )
 
-                    time.sleep(2)
+                    if self.stop_event.wait(2):
+                        return
 
                     continue
 
@@ -306,6 +313,9 @@ class ognb(server):
             # -----------------------------------------------------
             # 開始 tail
             # -----------------------------------------------------
+
+            if self.stop_event.is_set():
+                return
 
             self.netconf_session.send(
                 f"tail -F -- {log_file}\n"
@@ -374,14 +384,14 @@ class ognb(server):
 
         buffer = ""
 
-        while self.netconf_running:
+        while self.netconf_running and not self.stop_event.is_set():
 
             try:
 
                 if self.netconf_session is None:
                     break
 
-                while self.netconf_session.recv_ready():
+                while not self.stop_event.is_set() and self.netconf_session.recv_ready():
 
                     data = (
                         self.netconf_session
@@ -401,6 +411,8 @@ class ognb(server):
                     buffer = lines[-1]
 
                     for line in lines[:-1]:
+                        if self.stop_event.is_set():
+                            return
 
                         line = line.rstrip()
 
@@ -459,7 +471,8 @@ class ognb(server):
                             # 等待 gNB 建立新的 log file
                             # -------------------------------------
 
-                            time.sleep(2)
+                            if self.stop_event.wait(2):
+                                return
 
                             # -------------------------------------
                             # 重新啟動 Netconf monitor
@@ -468,7 +481,8 @@ class ognb(server):
                             # 會持續搜尋直到找到新的 log
                             # -------------------------------------
 
-                            self.start_netconf_monitor()
+                            if not self.stop_event.is_set():
+                                self.start_netconf_monitor()
 
                             return
 
@@ -542,9 +556,11 @@ class ognb(server):
                 # 會持續搜尋直到找到 log
                 # -----------------------------------------
 
-                time.sleep(2)
+                if self.stop_event.wait(2):
+                    return
 
-                self.start_netconf_monitor()
+                if not self.stop_event.is_set():
+                    self.start_netconf_monitor()
 
                 return
 
@@ -597,10 +613,14 @@ class ognb(server):
     # RU Manager Monitor
     # =========================================================
 
-    def start_rumanager_monitor(
+    def start_bootlog_monitor(
             self,
-            log_path="/workspace/LOGS_BACKUP/RU1_rumanager"
+            log_path="/workspace/logs/" 
+            "boot_log_oru_cntr*.log\n"
     ):
+
+        if self.stop_event.is_set():
+            return
 
         if self.rumanager_running:
             print(
@@ -676,7 +696,7 @@ class ognb(server):
 
         buffer = ""
 
-        while self.rumanager_running:
+        while self.rumanager_running and not self.stop_event.is_set():
 
             try:
 
@@ -805,6 +825,9 @@ class ognb(server):
             log_path="/workspace/logs/l1_log_tdd"
     ):
 
+        if self.stop_event.is_set():
+            return
+
         if self.throughput_running:
             print(
                 "[Throughput] "
@@ -923,7 +946,7 @@ class ognb(server):
             # Monitor loop
             # ==========================================
 
-            while True:
+            while not self.stop_event.is_set():
 
                 # ======================================
                 # Throughput timeout
@@ -949,59 +972,18 @@ class ognb(server):
                         "gNB may crash"
                     )
 
-                    # ----------------------------------
-                    # Cell 0
-                    # ----------------------------------
-
-                    self.db.insert_throughput(
-
-                        gnb_ip=self.ip_address,
-
-                        cell_id=0,
-
-                        dl_throughput=0,
-
-                        ul_throughput=0,
-
-                        ul_bler=0
-
-                    )
-
-                    # ----------------------------------
-                    # Cell 1
-                    # ----------------------------------
-
-                    self.db.insert_throughput(
-
-                        gnb_ip=self.ip_address,
-
-                        cell_id=1,
-
-                        dl_throughput=0,
-
-                        ul_throughput=0,
-
-                        ul_bler=0
-
-                    )
-
-                    # ----------------------------------
-                    # Cell 2
-                    # ----------------------------------
-
-                    self.db.insert_throughput(
-
-                        gnb_ip=self.ip_address,
-
-                        cell_id=2,
-
-                        dl_throughput=0,
-
-                        ul_throughput=0,
-
-                        ul_bler=0
-
-                    )
+                    # Only write zeroes for cells actually observed on this gNB.
+                    # Do not assume that all 12 cells are configured.
+                    for observed_cell in tuple(self.observed_cell_ids):
+                        if self.stop_event.is_set():
+                            break
+                        self.db.insert_throughput(
+                            gnb_ip=self.ip_address,
+                            cell_id=observed_cell,
+                            dl_throughput=0,
+                            ul_throughput=0,
+                            ul_bler=0
+                        )
 
                     # ----------------------------------
                     # Avoid repeatedly writing 0
@@ -1014,6 +996,9 @@ class ognb(server):
                 # ======================================
                 # Receive SSH data
                 # ======================================
+
+                if self.stop_event.is_set():
+                    break
 
                 if self.ssh_session.recv_ready():
 
@@ -1060,6 +1045,8 @@ class ognb(server):
                     # ==================================
 
                     for line in lines[:-1]:
+                        if self.stop_event.is_set():
+                            return
 
                         line = line.rstrip()
 
@@ -1136,20 +1123,25 @@ class ognb(server):
                         # Cell detection
                         # ==================================
 
-                        if "0 (MU " in line:
-
-                            cell_id = 0
-
-                        elif "1 (MU " in line:
-
-                            cell_id = 1
-
-                        elif "2 (MU " in line:
-
-                            cell_id = 2
-
-                        else:
-
+                        # Parse cell 0..11 without matching 0 inside 10.
+                        # Search within the cell column to avoid unrelated numbers.
+                        parts_for_cell = line.split("|")
+                        if len(parts_for_cell) < 5:
+                            continue
+                        cell_match = re.search(
+                            r"(?<![0-9])([0-9]{1,2})\s+\(MU\s",
+                            parts_for_cell[1] if len(parts_for_cell) > 1 else ""
+                        )
+                        if not cell_match:
+                            # Some L1 formats put the cell field in another column.
+                            cell_match = re.search(
+                                r"(?<![0-9])([0-9]{1,2})\s+\(MU\s",
+                                line
+                            )
+                        if not cell_match:
+                            continue
+                        cell_id = int(cell_match.group(1))
+                        if not 0 <= cell_id <= 11:
                             continue
 
                         try:
@@ -1249,6 +1241,7 @@ class ognb(server):
                             # Store database
                             # ==================================
 
+                            self.observed_cell_ids.add(cell_id)
                             self.db.insert_throughput(
 
                                 gnb_ip=(
@@ -1377,7 +1370,7 @@ class ognb(server):
         # RU Manager
         # ---------------------------------------------------------
 
-        self.start_rumanager_monitor()
+        self.start_bootlog_monitor()
 
         print(
             "[gNB Monitor] "
@@ -1389,19 +1382,24 @@ class ognb(server):
     # =========================================================
 
     def stop_all_monitors(self):
-
-        print(
-            "[gNB Monitor] "
-            "Stopping all monitors..."
-        )
-
+        """Request cooperative stop and close only this gNB's channels."""
+        self.stop_event.set()
         self.stop_throughput_monitor()
-
         self.stop_netconf_monitor()
-
         self.stop_rumanager_monitor()
-
-        print(
-            "[gNB Monitor] "
-            "All monitors stopped"
-        )
+        # Throughput scan uses ssh_session (the main shell), not throughput_session.
+        for attr in ("ssh_session",):
+            session = getattr(self, attr, None)
+            if session is not None:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        client = getattr(self, "ssh_client", None)
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        print(f"[gNB Monitor] Stop requested: {self.ip_address}")
