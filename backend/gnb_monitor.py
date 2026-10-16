@@ -1,32 +1,53 @@
 import threading
+import traceback
 
 from backend.ognb_component.ognb_server import ognb
 
-
 # =========================================================
-# Current gNB instance
-# =========================================================
-
-_current_gnb = None
-
-
-# =========================================================
-# Get current gNB
+# gNB Pool
+#
+# {
+#     "10.255.174.7":  gNB object,
+#     "10.255.174.239": gNB object,
+#     ...
+# }
 # =========================================================
 
-def get_gnb():
+_gnb_pool = {}
 
-    return _current_gnb
+# =========================================================
+# Lock
+#
+# Prevent multiple users from creating the same gNB
+# monitor at the same time.
+# =========================================================
+
+_gnb_pool_lock = threading.Lock()
+
+
+# =========================================================
+# Get gNB
+# =========================================================
+
+def get_gnb(ip_address):
+    return _gnb_pool.get(
+        ip_address
+    )
+
+
+# =========================================================
+# Get all gNBs
+# =========================================================
+
+def get_gnb_pool():
+    return _gnb_pool
 
 
 # =========================================================
 # Throughput Monitor
 # =========================================================
-import traceback
-
 
 def start_throughput_monitor(gnb):
-
     print(
         f"[Throughput] Monitor start: "
         f"{gnb.ip_address}"
@@ -37,15 +58,18 @@ def start_throughput_monitor(gnb):
         gnb.scan_throughput()
 
         print(
-            "[Throughput] "
-            "scan_throughput() returned normally"
+            f"[Throughput] "
+            f"scan_throughput() returned normally: "
+            f"{gnb.ip_address}"
         )
 
     except Exception as e:
 
         print(
-            "[Throughput] "
-            f"Monitor stopped: {repr(e)}"
+            f"[Throughput] "
+            f"Monitor stopped: "
+            f"{gnb.ip_address} "
+            f"{repr(e)}"
         )
 
         traceback.print_exc()
@@ -56,7 +80,6 @@ def start_throughput_monitor(gnb):
 # =========================================================
 
 def start_netconf_monitor(gnb):
-
     """
     Start Netconf server log monitor.
 
@@ -68,7 +91,8 @@ def start_netconf_monitor(gnb):
 
         print(
             f"[Netconf] "
-            f"Monitor start: {gnb.ip_address}"
+            f"Monitor start: "
+            f"{gnb.ip_address}"
         )
 
         gnb.start_netconf_monitor()
@@ -77,8 +101,12 @@ def start_netconf_monitor(gnb):
 
         print(
             f"[Netconf] "
-            f"Monitor stopped: {e}"
+            f"Monitor stopped: "
+            f"{gnb.ip_address} "
+            f"{e}"
         )
+
+        traceback.print_exc()
 
 
 # =========================================================
@@ -86,7 +114,6 @@ def start_netconf_monitor(gnb):
 # =========================================================
 
 def start_rumanager_monitor(gnb):
-
     """
     Start RU Manager log monitor.
 
@@ -98,7 +125,8 @@ def start_rumanager_monitor(gnb):
 
         print(
             f"[RU Manager] "
-            f"Monitor start: {gnb.ip_address}"
+            f"Monitor start: "
+            f"{gnb.ip_address}"
         )
 
         gnb.start_rumanager_monitor()
@@ -107,8 +135,12 @@ def start_rumanager_monitor(gnb):
 
         print(
             f"[RU Manager] "
-            f"Monitor stopped: {e}"
+            f"Monitor stopped: "
+            f"{gnb.ip_address} "
+            f"{e}"
         )
+
+        traceback.print_exc()
 
 
 # =========================================================
@@ -121,47 +153,77 @@ def start_gnb_monitor(
         password,
         port=22
 ):
-
-    global _current_gnb
-
     print(
         f"[gNB Monitor] "
-        f"Starting gNB monitor: {ip_address}"
+        f"Starting gNB monitor: "
+        f"{ip_address}"
     )
 
     # =====================================================
-    # Create gNB object
+    # Check whether monitor already exists
     # =====================================================
 
-    try:
+    with _gnb_pool_lock:
 
-        _current_gnb = ognb(
+        if ip_address in _gnb_pool:
+            print(
+                f"[gNB Monitor] "
+                f"Monitor already exists: "
+                f"{ip_address}"
+            )
 
-            ip_address=ip_address,
+            return _gnb_pool[
+                ip_address
+            ]
 
-            username=username,
+        # =================================================
+        # Create gNB object
+        # =================================================
 
-            password=password,
+        try:
 
-            port=port
+            gnb = ognb(
 
-        )
+                ip_address=ip_address,
 
-        print(
-            f"[gNB Monitor] "
-            f"gNB object created: {ip_address}"
-        )
+                username=username,
 
-    except Exception as e:
+                password=password,
 
-        print(
-            f"[gNB Monitor] "
-            f"Failed to create gNB object: {e}"
-        )
+                port=port
 
-        _current_gnb = None
+            )
 
-        return
+            print(
+                f"[gNB Monitor] "
+                f"gNB object created: "
+                f"{ip_address}"
+            )
+
+        except Exception as e:
+
+            print(
+                f"[gNB Monitor] "
+                f"Failed to create gNB object: "
+                f"{ip_address} "
+                f"{e}"
+            )
+
+            traceback.print_exc()
+
+            return None
+
+        # =================================================
+        # Put object into pool
+        #
+        # Put it here before starting monitor threads.
+        # This prevents another request from creating
+        # another object for the same IP.
+        # =================================================
+
+        _gnb_pool[
+            ip_address
+        ] = gnb
 
     # =====================================================
     # Connect
@@ -169,23 +231,39 @@ def start_gnb_monitor(
 
     try:
 
-        _current_gnb.connect()
+        gnb.connect()
 
         print(
             f"[gNB Monitor] "
-            f"gNB connected: {ip_address}"
+            f"gNB connected: "
+            f"{ip_address}"
         )
 
     except Exception as e:
 
         print(
             f"[gNB Monitor] "
-            f"Failed to connect to gNB: {e}"
+            f"Failed to connect to gNB: "
+            f"{ip_address} "
+            f"{e}"
         )
 
-        _current_gnb = None
+        traceback.print_exc()
 
-        return
+        # =================================================
+        # Remove failed gNB from pool
+        # =================================================
+
+        with _gnb_pool_lock:
+
+            if _gnb_pool.get(
+                    ip_address
+            ) is gnb:
+                del _gnb_pool[
+                    ip_address
+                ]
+
+        return None
 
     # =====================================================
     # Start all monitors
@@ -193,7 +271,8 @@ def start_gnb_monitor(
 
     print(
         f"[gNB Monitor] "
-        f"Starting all monitors: {ip_address}"
+        f"Starting all monitors: "
+        f"{ip_address}"
     )
 
     # =====================================================
@@ -205,12 +284,12 @@ def start_gnb_monitor(
         target=start_throughput_monitor,
 
         args=(
-            _current_gnb,
+            gnb,
         ),
 
         daemon=True,
 
-        name="ThroughputMonitor"
+        name=f"ThroughputMonitor-{ip_address}"
 
     )
 
@@ -225,12 +304,12 @@ def start_gnb_monitor(
         target=start_netconf_monitor,
 
         args=(
-            _current_gnb,
+            gnb,
         ),
 
         daemon=True,
 
-        name="NetconfMonitor"
+        name=f"NetconfMonitor-{ip_address}"
 
     )
 
@@ -245,12 +324,12 @@ def start_gnb_monitor(
         target=start_rumanager_monitor,
 
         args=(
-            _current_gnb,
+            gnb,
         ),
 
         daemon=True,
 
-        name="RUManagerMonitor"
+        name=f"RUManagerMonitor-{ip_address}"
 
     )
 
@@ -260,28 +339,31 @@ def start_gnb_monitor(
     # Status
     # =====================================================
 
-    # print(
-    #     f"[gNB Monitor] "
-    #     f"All monitor threads started: {ip_address}"
-    # )
-    #
-    # print(
-    #     f"[gNB Monitor] "
-    #     f"Throughput thread alive: "
-    #     f"{throughput_thread.is_alive()}"
-    # )
-    #
-    # print(
-    #     f"[gNB Monitor] "
-    #     f"Netconf thread alive: "
-    #     f"{netconf_thread.is_alive()}"
-    # )
-    #
-    # print(
-    #     f"[gNB Monitor] "
-    #     f"RU Manager thread alive: "
-    #     f"{rumanager_thread.is_alive()}"
-    # )
+    print(
+        f"[gNB Monitor] "
+        f"All monitor threads started: "
+        f"{ip_address}"
+    )
+
+    print(
+        f"[gNB Monitor] "
+        f"Throughput thread alive: "
+        f"{throughput_thread.is_alive()}"
+    )
+
+    print(
+        f"[gNB Monitor] "
+        f"Netconf thread alive: "
+        f"{netconf_thread.is_alive()}"
+    )
+
+    print(
+        f"[gNB Monitor] "
+        f"RU Manager thread alive: "
+        f"{rumanager_thread.is_alive()}"
+    )
+
+    return gnb
 
 
 # =========================================================
@@ -294,7 +376,6 @@ def start_gnb_monitor_thread(
         password,
         port=22
 ):
-
     monitor_thread = threading.Thread(
 
         target=start_gnb_monitor,
@@ -313,7 +394,7 @@ def start_gnb_monitor_thread(
 
         daemon=True,
 
-        name="GNBMonitor"
+        name=f"GNBMonitor-{ip_address}"
 
     )
 
@@ -321,7 +402,8 @@ def start_gnb_monitor_thread(
 
     print(
         f"[gNB Monitor] "
-        f"Monitor thread started: {ip_address}"
+        f"Monitor thread started: "
+        f"{ip_address}"
     )
 
     return monitor_thread

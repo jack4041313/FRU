@@ -599,7 +599,7 @@ class ognb(server):
 
     def start_rumanager_monitor(
             self,
-            log_path="/workspace/logs/RU1_rumanager"
+            log_path="/workspace/LOGS_BACKUP/RU1_rumanager"
     ):
 
         if self.rumanager_running:

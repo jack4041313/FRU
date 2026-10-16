@@ -42,9 +42,49 @@
      Dashboard Title
      ===================================== -->
 
-<h2 class="mb-3">
+<h2 class="mb-3" id="dashboardTitle">
     10.255.174.7 Dashboard
 </h2>
+
+
+<!-- =====================================
+     gNB Selection
+     新增：gNB 選擇按鈕
+     ===================================== -->
+
+<div class="mb-4">
+
+    <label class="form-label fw-bold">
+        Select gNB:
+    </label>
+
+    <div class="btn-group flex-wrap" role="group" aria-label="Select gNB">
+
+        <button
+            type="button"
+            id="gnb1747Button"
+            class="btn btn-primary active"
+            data-gnb-ip="10.255.174.7"
+            aria-pressed="true"
+            onclick="selectGNB('10.255.174.7')"
+        >
+            10.255.174.7
+        </button>
+
+        <button
+            type="button"
+            id="gnb175105Button"
+            class="btn btn-outline-primary"
+            data-gnb-ip="10.255.175.105"
+            aria-pressed="false"
+            onclick="selectGNB('10.255.175.105')"
+        >
+            10.255.175.105
+        </button>
+
+    </div>
+
+</div>
 
 
 <!-- =====================================
@@ -62,7 +102,7 @@
         id="status"
         class="badge bg-success"
     >
-        Connected
+        Checking...
     </span>
 
 </div>
@@ -274,35 +314,9 @@
 
 
 <!-- =====================================
-     Cell-1 UL
-     ===================================== -->
-
-<div class="card mb-4">
-
-    <div class="card-header">
-
-        Cell-1 UL Throughput
-
-    </div>
-
-
-    <div class="card-body">
-
-        <div class="chart-container">
-
-            <canvas
-                id="cell1UlChart"
-            ></canvas>
-
-        </div>
-
-    </div>
-
-</div>
-
-<!-- =====================================
   Cell 2 DL
  ===================================== -->
+
 <div class="card mb-4">
 
     <div class="card-header">
@@ -326,31 +340,6 @@
 
 </div>
 
-<!-- =====================================
-  Cell 2 uL
- ===================================== -->
-<div class="card mb-4">
-
-    <div class="card-header">
-
-        Cell-2 UL Throughput
-
-    </div>
-
-
-    <div class="card-body">
-
-        <div class="chart-container">
-
-            <canvas
-                id="cell2UlChart"
-            ></canvas>
-
-        </div>
-
-    </div>
-
-</div>
 
 <!-- =====================================
      Chart.js
@@ -359,6 +348,60 @@
 <script
     src="https://cdn.jsdelivr.net/npm/chart.js"
 ></script>
+
+
+<!-- =====================================
+     gNB Selection JS
+     新增：選擇 gNB 並更新標題
+     ===================================== -->
+
+<script>
+
+    // 目前選取的 gNB IP
+    let selectedGNBIP = "10.255.174.7";
+
+    function selectGNB(ip) {
+
+        selectedGNBIP = ip;
+
+        // 更新 Dashboard 標題
+        document.getElementById("dashboardTitle").textContent =
+            ip + " Dashboard";
+
+        // 更新瀏覽器頁籤標題
+        document.title = ip + " Dashboard";
+
+        // 更新按鈕外觀
+        document.querySelectorAll("[data-gnb-ip]").forEach(button => {
+
+            const selected = button.dataset.gnbIp === ip;
+
+            button.classList.toggle("btn-primary", selected);
+            button.classList.toggle("active", selected);
+            button.classList.toggle("btn-outline-primary", !selected);
+
+            button.setAttribute(
+                "aria-pressed",
+                selected ? "true" : "false"
+            );
+
+        });
+
+        // 通知 dashboard.js 切換 gNB。
+        // dashboard.js 尚未實作此事件前，這只會更新按鈕與標題。
+        window.dispatchEvent(
+            new CustomEvent("gnbChanged", {
+                detail: {
+                    ip: selectedGNBIP
+                }
+            })
+        );
+
+        console.log("[Dashboard] Selected gNB:", selectedGNBIP);
+    }
+
+</script>
+
 
 <!-- =====================================
      Dashboard JS

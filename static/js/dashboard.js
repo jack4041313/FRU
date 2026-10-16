@@ -1,7 +1,6 @@
 // Default time range
 let range = "10m";
 
-
 //=============================
 // Chart Creator
 //=============================
@@ -102,19 +101,6 @@ const cell1DlChart =
 
 
 //=====================================
-// Cell-1 UL
-//=====================================
-
-const cell1UlChart =
-    createChart(
-        "cell1UlChart",
-        "Cell-1 UL Throughput (Mbps)",
-        "#ef4444",
-        "rgba(239,68,68,0.15)"
-    );
-
-
-//=====================================
 // Cell-2 DL
 //=====================================
 
@@ -124,19 +110,6 @@ const cell2DlChart =
         "Cell-2 DL Throughput (Mbps)",
         "#a855f7",
         "rgba(168,85,247,0.15)"
-    );
-
-
-//=====================================
-// Cell-2 UL
-//=====================================
-
-const cell2UlChart =
-    createChart(
-        "cell2UlChart",
-        "Cell-2 UL Throughput (Mbps)",
-        "#14b8a6",
-        "rgba(20,184,166,0.15)"
     );
 
 
@@ -177,7 +150,7 @@ function updateChart(
 function updateThroughput() {
 
     fetch(
-        "/api/throughput?range=" + range
+        `/api/throughput?ip=${encodeURIComponent(selectedGNBIP)}&range=${range}`
     )
 
         .then(
@@ -222,18 +195,6 @@ function updateThroughput() {
                 updateChart(
                     cell0UlChart,
                     data.cell0_ul
-                );
-
-
-                updateChart(
-                    cell1UlChart,
-                    data.cell1_ul
-                );
-
-
-                updateChart(
-                    cell2UlChart,
-                    data.cell2_ul
                 );
 
             }
@@ -294,7 +255,7 @@ setInterval(
 
 function updateLogs() {
 
-    fetch("/api/logs")
+     fetch(`/api/logs?ip=${encodeURIComponent(selectedGNBIP)}`)
 
         .then(
             response => {
@@ -478,6 +439,137 @@ function updateLogs() {
 
 }
 
+//=====================================
+// selectGNB
+//=====================================
+function selectGNB(ip) {
+
+    selectedGNBIP = ip;
+
+    document.getElementById("dashboardTitle").textContent =
+        ip + " Dashboard";
+
+    document.title = ip + " Dashboard";
+
+    document.querySelectorAll("[data-gnb-ip]").forEach(button => {
+
+        const selected = button.dataset.gnbIp === ip;
+
+        button.classList.toggle("btn-primary", selected);
+        button.classList.toggle("active", selected);
+        button.classList.toggle("btn-outline-primary", !selected);
+
+        button.setAttribute(
+            "aria-pressed",
+            selected ? "true" : "false"
+        );
+    });
+
+    // Refresh throughput and logs for the selected gNB
+    updateThroughput();
+    updateLogs();
+}
+
+// =====================================
+// Update gNB SSH Status
+// =====================================
+
+async function updateGNBStatus() {
+
+    const ip = selectedGNBIP;
+
+    const statusElement = document.getElementById("status");
+
+    if (!statusElement) {
+        console.error("[Status] Element not found");
+        return;
+    }
+
+    console.log("[Status] Checking:", ip);
+
+    try {
+
+        const response = await fetch(
+            `/api/status?ip=${encodeURIComponent(ip)}`
+        );
+
+        console.log("[Status] HTTP:", response.status);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        console.log("[Status] API response:", data);
+
+        if (ip !== selectedGNBIP) {
+            return;
+        }
+
+        if (data.connected === true) {
+
+            statusElement.textContent = "Connected";
+            statusElement.className = "badge bg-success";
+
+        } else {
+
+            statusElement.textContent = "Disconnect";
+            statusElement.className = "badge bg-danger";
+
+        }
+
+    } catch (error) {
+
+        console.error("[Status] Failed:", error);
+
+        if (ip !== selectedGNBIP) {
+            return;
+        }
+
+        statusElement.textContent = "Unknown";
+        statusElement.className = "badge bg-secondary";
+
+    }
+}
+
+// =====================================
+// Initial Status Check
+// =====================================
+
+updateGNBStatus();
+
+
+// =====================================
+// Refresh Every 5 Seconds
+// =====================================
+
+setInterval(
+    updateGNBStatus,
+    5000
+);
+
+
+// =====================================
+// Refresh When gNB Changes
+// =====================================
+
+window.addEventListener(
+    "gnbChanged",
+    function () {
+
+        const statusElement =
+            document.getElementById("status");
+
+        statusElement.textContent = "Checking...";
+
+        statusElement.className =
+            "badge bg-secondary";
+
+        updateGNBStatus();
+
+    }
+);
 
 //=====================================
 // Initial Log Load
