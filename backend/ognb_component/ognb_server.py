@@ -1,7 +1,6 @@
 import time
 import threading
 import traceback
-import re
 
 from collections import deque
 from datetime import datetime
@@ -39,14 +38,14 @@ class ognb(server):
         #
         # 1. throughput_session
         # 2. netconf_session
-        # 3. rumanager_session
+        # 3. oru_boot_log_session
         #
         # 三個 monitor 各自使用獨立 channel
         # =========================================================
 
         self.throughput_session = None
         self.netconf_session = None
-        self.rumanager_session = None
+        self.oru_boot_log_session = None
 
         # =========================================================
         # Throughput
@@ -57,7 +56,6 @@ class ognb(server):
         self.uptime = "Unknown"
 
         self.last_throughput_time = time.time()
-        self.observed_cell_ids = set()
 
         # =========================================================
         # Netconf
@@ -74,12 +72,12 @@ class ognb(server):
         # RU Manager
         # =========================================================
 
-        self.rumanager_logs = deque(
+        self.oru_boot_log_logs = deque(
             maxlen=200
         )
 
-        self.rumanager_running = False
-        self.rumanager_thread = None
+        self.oru_boot_log_running = False
+        self.oru_boot_log_thread = None
 
     def __del__(self):
 
@@ -286,8 +284,9 @@ class ognb(server):
 
                 if log_file is None:
                     print(
-                        f"[Netconf][{self.ip_address}] "
-                        "Cannot find trace log, retrying..."
+                        "[Netconf] "
+                        "Cannot find trace log, "
+                        "retrying..."
                     )
 
                     self.add_netconf_log(
@@ -610,103 +609,68 @@ class ognb(server):
             self.netconf_session = None
 
     # =========================================================
-    # RU Manager Monitor
+    # ORU Controller Boot Log Monitor
     # =========================================================
 
-    def start_bootlog_monitor(
-            self,
-            log_path="/workspace/logs/" 
-            "boot_log_oru_cntr*.log\n"
-    ):
-
+    def start_oru_controller_boot_log_monitor(self):
+        """Follow the newest ORU controller boot log, including log rotation."""
         if self.stop_event.is_set():
             return
-
-        if self.rumanager_running:
-            print(
-                "[RU Manager] "
-                "Monitor already running"
-            )
-
+        if self.oru_boot_log_running:
+            print("[ORU Boot] Monitor already running")
             return
-
         try:
-
-            # -----------------------------------------------------
-            # 建立獨立 SSH channel
-            # -----------------------------------------------------
-
-            self.rumanager_session = (
-                self.create_ssh_channel()
+            self.oru_boot_log_session = self.create_ssh_channel()
+            command = (
+                'current=""; tail_pid=""; '
+                'while :; do '
+                'latest=$(ls -1t /workspace/logs/boot_log_oru_cntrl_*.log 2>/dev/null | head -n 1); '
+                'if [ "$latest" != "$current" ]; then '
+                '[ -z "$tail_pid" ] || { kill "$tail_pid" 2>/dev/null; wait "$tail_pid" 2>/dev/null; }; '
+                'current="$latest"; tail_pid=""; '
+                'if [ -n "$latest" ]; then '
+                'printf "\\n[ORU Boot Log] Following %s\\n" "$latest"; '
+                'tail -n 100 -F -- "$latest" & tail_pid=$!; '
+                'else echo "[ORU Boot Log] Waiting for boot_log_oru_cntrl_*.log..."; fi; '
+                'fi; sleep 2; '
+                'done'
             )
-
-            # -----------------------------------------------------
-            # tail RU Manager log
-            # -----------------------------------------------------
-
-            self.rumanager_session.send(
-                f"tail -F {log_path}\n"
+            self.oru_boot_log_session.send(command + "\n")
+            self.oru_boot_log_running = True
+            print("[ORU Boot] Monitoring /workspace/logs/boot_log_oru_cntrl_*.log")
+            self.oru_boot_log_thread = threading.Thread(
+                target=self.scan_oru_controller_boot_log, daemon=True
             )
-
-            self.rumanager_running = True
-
-            print(
-                "[RU Manager] "
-                f"Monitoring {log_path}"
-            )
-
-            # -----------------------------------------------------
-            # Start thread
-            # -----------------------------------------------------
-
-            self.rumanager_thread = (
-                threading.Thread(
-                    target=self.scan_rumanager_log,
-                    daemon=True
-                )
-            )
-
-            self.rumanager_thread.start()
-
+            self.oru_boot_log_thread.start()
         except Exception as e:
-
-            print(
-                "[RU Manager] "
-                f"Monitor start failed: {e}"
-            )
-
-            self.add_rumanager_log(
-                f"ERROR: {e}"
-            )
-
-            if self.rumanager_session:
-
+            print(f"[ORU Boot] Monitor start failed: {e}")
+            self.add_oru_controller_boot_log(f"ERROR: {e}")
+            if self.oru_boot_log_session:
                 try:
-                    self.rumanager_session.close()
+                    self.oru_boot_log_session.close()
                 except Exception:
                     pass
-
-                self.rumanager_session = None
+                self.oru_boot_log_session = None
 
     # =========================================================
-    # Scan RU Manager Log
+    # Scan ORU Controller Boot Log
     # =========================================================
 
-    def scan_rumanager_log(self):
+    def scan_oru_controller_boot_log(self):
 
         buffer = ""
 
-        while self.rumanager_running and not self.stop_event.is_set():
+        while self.oru_boot_log_running and not self.stop_event.is_set():
 
             try:
 
-                if self.rumanager_session is None:
+                if self.oru_boot_log_session is None:
                     break
 
-                while self.rumanager_session.recv_ready():
+                while self.oru_boot_log_session.recv_ready():
 
                     data = (
-                        self.rumanager_session
+                        self.oru_boot_log_session
                         .recv(4096)
                         .decode(
                             errors="ignore"
@@ -747,7 +711,7 @@ class ognb(server):
                         # Memory only
                         # -----------------------------------------
 
-                        self.add_rumanager_log(
+                        self.add_oru_controller_boot_log(
                             log_line
                         )
 
@@ -755,38 +719,38 @@ class ognb(server):
 
             except Exception as e:
 
-                self.add_rumanager_log(
+                self.add_oru_controller_boot_log(
                     f"ERROR: {e}"
                 )
 
                 break
 
         print(
-            "[RU Manager] "
+            "[ORU Boot] "
             "Monitor stopped"
         )
 
     # =========================================================
-    # Add RU Manager Log
+    # Add ORU Controller Boot Log
     # =========================================================
 
-    def add_rumanager_log(
+    def add_oru_controller_boot_log(
             self,
             line
     ):
 
-        self.rumanager_logs.append(
+        self.oru_boot_log_logs.append(
             line
         )
 
     # =========================================================
-    # Get RU Manager Logs
+    # Get ORU Controller Boot Log
     # =========================================================
 
-    def get_rumanager_logs(self):
+    def get_oru_controller_boot_log_logs(self):
 
         return "\n".join(
-            self.rumanager_logs
+            self.oru_boot_log_logs
         )
 
     # =========================================================
@@ -798,21 +762,21 @@ class ognb(server):
         return self.uptime
 
     # =========================================================
-    # Stop RU Manager Monitor
+    # Stop ORU Controller Boot Log Monitor
     # =========================================================
 
-    def stop_rumanager_monitor(self):
+    def stop_oru_controller_boot_log_monitor(self):
 
-        self.rumanager_running = False
+        self.oru_boot_log_running = False
 
-        if self.rumanager_session:
+        if self.oru_boot_log_session:
 
             try:
-                self.rumanager_session.close()
+                self.oru_boot_log_session.close()
             except Exception:
                 pass
 
-            self.rumanager_session = None
+            self.oru_boot_log_session = None
 
     # =========================================================
     # Throughput Monitor
@@ -972,18 +936,59 @@ class ognb(server):
                         "gNB may crash"
                     )
 
-                    # Only write zeroes for cells actually observed on this gNB.
-                    # Do not assume that all 12 cells are configured.
-                    for observed_cell in tuple(self.observed_cell_ids):
-                        if self.stop_event.is_set():
-                            break
-                        self.db.insert_throughput(
-                            gnb_ip=self.ip_address,
-                            cell_id=observed_cell,
-                            dl_throughput=0,
-                            ul_throughput=0,
-                            ul_bler=0
-                        )
+                    # ----------------------------------
+                    # Cell 0
+                    # ----------------------------------
+
+                    self.db.insert_throughput(
+
+                        gnb_ip=self.ip_address,
+
+                        cell_id=0,
+
+                        dl_throughput=0,
+
+                        ul_throughput=0,
+
+                        ul_bler=0
+
+                    )
+
+                    # ----------------------------------
+                    # Cell 1
+                    # ----------------------------------
+
+                    self.db.insert_throughput(
+
+                        gnb_ip=self.ip_address,
+
+                        cell_id=1,
+
+                        dl_throughput=0,
+
+                        ul_throughput=0,
+
+                        ul_bler=0
+
+                    )
+
+                    # ----------------------------------
+                    # Cell 2
+                    # ----------------------------------
+
+                    self.db.insert_throughput(
+
+                        gnb_ip=self.ip_address,
+
+                        cell_id=2,
+
+                        dl_throughput=0,
+
+                        ul_throughput=0,
+
+                        ul_bler=0
+
+                    )
 
                     # ----------------------------------
                     # Avoid repeatedly writing 0
@@ -1123,25 +1128,20 @@ class ognb(server):
                         # Cell detection
                         # ==================================
 
-                        # Parse cell 0..11 without matching 0 inside 10.
-                        # Search within the cell column to avoid unrelated numbers.
-                        parts_for_cell = line.split("|")
-                        if len(parts_for_cell) < 5:
-                            continue
-                        cell_match = re.search(
-                            r"(?<![0-9])([0-9]{1,2})\s+\(MU\s",
-                            parts_for_cell[1] if len(parts_for_cell) > 1 else ""
-                        )
-                        if not cell_match:
-                            # Some L1 formats put the cell field in another column.
-                            cell_match = re.search(
-                                r"(?<![0-9])([0-9]{1,2})\s+\(MU\s",
-                                line
-                            )
-                        if not cell_match:
-                            continue
-                        cell_id = int(cell_match.group(1))
-                        if not 0 <= cell_id <= 11:
+                        if "0 (MU " in line:
+
+                            cell_id = 0
+
+                        elif "1 (MU " in line:
+
+                            cell_id = 1
+
+                        elif "2 (MU " in line:
+
+                            cell_id = 2
+
+                        else:
+
                             continue
 
                         try:
@@ -1241,7 +1241,6 @@ class ognb(server):
                             # Store database
                             # ==================================
 
-                            self.observed_cell_ids.add(cell_id)
                             self.db.insert_throughput(
 
                                 gnb_ip=(
@@ -1344,7 +1343,7 @@ class ognb(server):
     #
     # Channel 1 -> Throughput
     # Channel 2 -> Netconf
-    # Channel 3 -> RU Manager
+    # Channel 3 -> ORU Controller Boot Log
     # =========================================================
 
     def start_all_monitors(self):
@@ -1370,7 +1369,7 @@ class ognb(server):
         # RU Manager
         # ---------------------------------------------------------
 
-        self.start_bootlog_monitor()
+        self.start_oru_controller_boot_log_monitor()
 
         print(
             "[gNB Monitor] "
@@ -1386,7 +1385,7 @@ class ognb(server):
         self.stop_event.set()
         self.stop_throughput_monitor()
         self.stop_netconf_monitor()
-        self.stop_rumanager_monitor()
+        self.stop_oru_controller_boot_log_monitor()
         # Throughput scan uses ssh_session (the main shell), not throughput_session.
         for attr in ("ssh_session",):
             session = getattr(self, attr, None)

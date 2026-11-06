@@ -204,6 +204,24 @@
     </div>
 </div>
 
+<!-- RU Logs: selected gNB and selected RU -->
+<div class="card mb-4" id="ruLogsCard">
+    <div class="card-header d-flex flex-column align-items-start gap-2">
+        <span class="fw-bold" id="ruLogTitle">RU Log</span>
+        <div id="ruLogRuGroup" class="d-flex flex-wrap gap-2" role="group" aria-label="Select RU for logs">
+            <button type="button" class="btn btn-primary btn-sm active" data-ru="1" aria-pressed="true">RU-1</button>
+        </div>
+        <div id="ruLogTypeGroup" class="d-flex flex-wrap gap-3" role="group" aria-label="Select RU log">
+            <button type="button" class="btn btn-primary btn-sm active" data-ru-log="rumanager" aria-pressed="true">RU Manager</button>
+            <button type="button" class="btn btn-outline-primary btn-sm" data-ru-log="dsp_console" aria-pressed="false">DSP Console</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <pre id="ruLogConsole" class="mb-0" aria-live="off"
+             style="height:300px; overflow:auto; background:#0b1220; color:#e2e8f0; padding:12px; border-radius:6px; white-space:pre-wrap; overflow-wrap:anywhere; font-family:monospace;">Waiting for RU log...</pre>
+    </div>
+</div>
+
 <!-- =====================================
      Cell-0 DL
      ===================================== -->

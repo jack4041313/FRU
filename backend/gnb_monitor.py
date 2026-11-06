@@ -118,31 +118,31 @@ def start_netconf_monitor(gnb):
 
 
 # =========================================================
-# RU Manager Monitor
+# ORU Controller Boot Log Monitor
 # =========================================================
 
-def start_bootlog_monitor(gnb):
+def start_oru_controller_boot_log_monitor(gnb):
     """
-    Start RU Manager log monitor.
+    Start ORU Controller Boot Log log monitor.
 
     The actual monitoring is handled by
-    start_bootlog_monitor() inside ognb.
+    start_oru_controller_boot_log_monitor() inside ognb.
     """
 
     try:
 
         print(
-            f"[RU Manager] "
+            f"[ORU Controller Boot Log] "
             f"Monitor start: "
             f"{gnb.ip_address}"
         )
 
-        gnb.start_bootlog_monitor()
+        gnb.start_oru_controller_boot_log_monitor()
 
     except Exception as e:
 
         print(
-            f"[RU Manager] "
+            f"[ORU Controller Boot Log] "
             f"Monitor stopped: "
             f"{gnb.ip_address} "
             f"{e}"
@@ -324,12 +324,12 @@ def start_gnb_monitor(
     netconf_thread.start()
 
     # =====================================================
-    # RU Manager
+    # ORU Controller Boot Log
     # =====================================================
 
-    rumanager_thread = threading.Thread(
+    oru_boot_log_thread = threading.Thread(
 
-        target=start_bootlog_monitor,
+        target=start_oru_controller_boot_log_monitor,
 
         args=(
             gnb,
@@ -341,10 +341,10 @@ def start_gnb_monitor(
 
     )
 
-    rumanager_thread.start()
+    oru_boot_log_thread.start()
 
     with _gnb_pool_lock:
-        _gnb_threads[ip_address] = [throughput_thread, netconf_thread, rumanager_thread]
+        _gnb_threads[ip_address] = [throughput_thread, netconf_thread, oru_boot_log_thread]
 
     # =====================================================
     # Status
@@ -370,8 +370,8 @@ def start_gnb_monitor(
 
     print(
         f"[gNB Monitor] "
-        f"RU Manager thread alive: "
-        f"{rumanager_thread.is_alive()}"
+        f"ORU Controller Boot Log thread alive: "
+        f"{oru_boot_log_thread.is_alive()}"
     )
 
     return gnb
@@ -459,7 +459,7 @@ def stop_gnb_monitor(ip_address, timeout=5):
         threads = _gnb_threads.get(ip_address, [])
         # Internal scan threads are started by ognb itself.
         threads = threads + [getattr(gnb, name, None) for name in
-                             ("netconf_thread", "rumanager_thread", "throughput_thread")]
+                             ("netconf_thread", "oru_boot_log_thread", "throughput_thread")]
         for thread in threads:
             if thread and thread.is_alive() and thread is not threading.current_thread():
                 thread.join(timeout=timeout)
