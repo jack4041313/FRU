@@ -9,7 +9,8 @@ from backend.database import GNBDatabase
 from backend.gnb_monitor import (
     start_gnb_monitor_thread,
     get_gnb,
-    stop_gnb_monitor
+    stop_gnb_monitor,
+    is_gnb_starting
 )
 
 from flask import (
@@ -137,6 +138,54 @@ def start_gnb_once(ip, config):
         GNB_MONITOR_THREADS[ip] = thread
         return thread
 
+# Manual SSH reconnect for one configured gNB; never reconnect other gNBs.
+GNB_RECONNECTING = set()
+GNB_RECONNECT_LOCK = threading.Lock()
+
+@app.route("/api/gnbs/<ip>/reconnect", methods=["POST"])
+def reconnect_gnb(ip):
+    ip = validate_gnb_ip(ip)
+    if ip is None:
+        return jsonify({"error": "Invalid gNB IP"}), 400
+    with GNB_POOL_LOCK:
+        config = GNB_POOL.get(ip)
+        if config is None:
+            return jsonify({"error": "gNB is not configured"}), 404
+        config = config.copy()
+    with GNB_RECONNECT_LOCK:
+        if ip in GNB_RECONNECTING or is_gnb_starting(ip):
+            return jsonify({"error": "gNB is already reconnecting"}), 409
+        gnb = get_gnb(ip)
+        if gnb is not None:
+            try:
+                transport = gnb.ssh_client.get_transport()
+                if transport and transport.is_active() and transport.is_authenticated():
+                    return jsonify({"error": "gNB is already connected"}), 409
+            except Exception:
+                pass
+        GNB_RECONNECTING.add(ip)
+
+    def worker():
+        try:
+            success, message = stop_gnb_monitor(ip)
+            if not success:
+                print(f"[Reconnect][{ip}] Cleanup failed: {message}")
+                return
+            # Respect Remove gNB while old workers are being cleaned up.
+            with GNB_POOL_LOCK:
+                if ip not in GNB_POOL:
+                    return
+                start_gnb_once(ip, config)
+        except Exception as exc:
+            print(f"[Reconnect][{ip}] Failed: {exc}")
+        finally:
+            with GNB_RECONNECT_LOCK:
+                GNB_RECONNECTING.discard(ip)
+
+    threading.Thread(target=worker, daemon=True, name=f"Reconnect-{ip}").start()
+    return jsonify({"ip": ip, "status": "reconnecting"}), 202
+
+
 @app.route("/api/gnbs/<ip>", methods=["DELETE"])
 def remove_gnb(ip):
     ip = validate_gnb_ip(ip)
@@ -179,7 +228,8 @@ def gnb_status():
     if gnb is None:
         return jsonify({
             "ip": ip,
-            "connected": False
+            "connected": False,
+            "reconnecting": ip in GNB_RECONNECTING or is_gnb_starting(ip)
         })
 
     try:
@@ -196,7 +246,9 @@ def gnb_status():
 
     return jsonify({
         "ip": ip,
-        "connected": connected
+        "connected": connected,
+        "l1_uptime": gnb.get_uptime() if connected else "Unknown",
+        "reconnecting": ip in GNB_RECONNECTING or is_gnb_starting(ip)
     })
 
 
@@ -210,6 +262,45 @@ def index():
         "dashboard.html"
     )
 
+
+# RU count and CC configuration, persisted separately for each gNB.
+RU_CONFIG_FILE = Path(__file__).resolve().parent / "database" / "ru_config.json"
+RU_CONFIG_LOCK = threading.RLock()
+
+def read_ru_configs():
+    try:
+        data = json.loads(RU_CONFIG_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+@app.route("/api/ru-config", methods=["GET", "PUT"])
+def ru_config():
+    ip = request.args.get("ip")
+    if ip not in GNB_POOL:
+        return jsonify({"error": "Unknown gNB IP"}), 400
+    with RU_CONFIG_LOCK:
+        configs = read_ru_configs()
+        if request.method == "GET":
+            return jsonify(configs.get(ip, {"ru_count": 1, "cc_per_ru": 3}))
+        payload = request.get_json(silent=True) or {}
+        try:
+            count = int(payload["ru_count"])
+            cc = int(payload["cc_per_ru"])
+        except (KeyError, ValueError, TypeError):
+            return jsonify({"error": "Invalid RU configuration"}), 400
+        if not 1 <= count <= 4 or not 1 <= cc <= 3:
+            return jsonify({"error": "RU Count must be 1-4 and CC per RU 1-3"}), 400
+        config = {"ru_count": count, "cc_per_ru": cc}
+        configs[ip] = config
+        try:
+            RU_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = RU_CONFIG_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(configs, indent=2), encoding="utf-8")
+            tmp.replace(RU_CONFIG_FILE)
+        except OSError as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify(config)
 
 # =========================================================
 # Throughput API
@@ -236,57 +327,25 @@ def throughput():
             "ip": ip
         }), 400
 
-    # -----------------------------------------------------
-    # 目前 database 還沒有按照 IP 分開
-    #
-    # 這裡先保留你原本的 database 查詢
-    # -----------------------------------------------------
-
-    return jsonify({
-
-        "cell0_dl": db.get_throughput_history(
-            gnb_ip=ip,
-            duration=duration,
-            cell_id=0,
-            column="dl_throughput"
-        ),
-
-        "cell0_ul": db.get_throughput_history(
-            gnb_ip=ip,
-            duration=duration,
-            cell_id=0,
-            column="ul_throughput"
-        ),
-
-        "cell1_dl": db.get_throughput_history(
-            gnb_ip=ip,
-            duration=duration,
-            cell_id=1,
-            column="dl_throughput"
-        ),
-
-        "cell1_ul": db.get_throughput_history(
-            gnb_ip=ip,
-            duration=duration,
-            cell_id=1,
-            column="ul_throughput"
-        ),
-
-        "cell2_dl": db.get_throughput_history(
-            gnb_ip=ip,
-            duration=duration,
-            cell_id=2,
-            column="dl_throughput"
-        ),
-
-        "cell2_ul": db.get_throughput_history(
-            gnb_ip=ip,
-            duration=duration,
-            cell_id=2,
-            column="ul_throughput"
-        )
-
-    })
+    with RU_CONFIG_LOCK:
+        config = read_ru_configs().get(ip, {"ru_count": 1, "cc_per_ru": 3})
+    try:
+        ru = int(request.args.get("ru", "1"))
+    except ValueError:
+        return jsonify({"error": "Invalid RU"}), 400
+    if not 1 <= ru <= config["ru_count"]:
+        return jsonify({"error": "RU outside configured range"}), 400
+    base_cell = (ru - 1) * config["cc_per_ru"]
+    cells = []
+    for cc in range(config["cc_per_ru"]):
+        cell_id = base_cell + cc
+        cells.append({
+            "cc": cc,
+            "cell_id": cell_id,
+            "dl": db.get_throughput_history(gnb_ip=ip, duration=duration, cell_id=cell_id, column="dl_throughput"),
+            "ul": db.get_throughput_history(gnb_ip=ip, duration=duration, cell_id=cell_id, column="ul_throughput") if cell_id <= 2 else []
+        })
+    return jsonify({"cells": cells})
 
 
 # =========================================================

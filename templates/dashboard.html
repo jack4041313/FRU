@@ -182,6 +182,7 @@
 
     <div class="flex-shrink-0 ms-auto" style="white-space:nowrap;">
         <div class="mb-0 d-flex flex-nowrap align-items-center gap-2">
+            <button id="reconnectGnbButton" class="btn btn-outline-primary btn-sm text-nowrap" type="button" disabled>Reconnect</button>
             <span>Status:</span>
             <span id="status" class="badge bg-secondary">Checking...</span>
             <span class="ms-2">L1 Up-Time:</span>
@@ -208,9 +209,6 @@
 <div class="card mb-4" id="ruLogsCard">
     <div class="card-header d-flex flex-column align-items-start gap-2">
         <span class="fw-bold" id="ruLogTitle">RU Log</span>
-        <div id="ruLogRuGroup" class="d-flex flex-wrap gap-2" role="group" aria-label="Select RU for logs">
-            <button type="button" class="btn btn-primary btn-sm active" data-ru="1" aria-pressed="true">RU-1</button>
-        </div>
         <div id="ruLogTypeGroup" class="d-flex flex-wrap gap-3" role="group" aria-label="Select RU log">
             <button type="button" class="btn btn-primary btn-sm active" data-ru-log="rumanager" aria-pressed="true">RU Manager</button>
             <button type="button" class="btn btn-outline-primary btn-sm" data-ru-log="dsp_console" aria-pressed="false">DSP Console</button>

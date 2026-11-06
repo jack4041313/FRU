@@ -1,3 +1,4 @@
+import re
 import time
 import threading
 import traceback
@@ -1128,20 +1129,13 @@ class ognb(server):
                         # Cell detection
                         # ==================================
 
-                        if "0 (MU " in line:
-
-                            cell_id = 0
-
-                        elif "1 (MU " in line:
-
-                            cell_id = 1
-
-                        elif "2 (MU " in line:
-
-                            cell_id = 2
-
-                        else:
-
+                        # Match the complete Cell ID at the beginning of the
+                        # L1 statistics row. Avoid matching Cell-10 as Cell-0.
+                        cell_match = re.match(r"^\s*(\d+)\s+\(MU\s", line)
+                        if cell_match is None:
+                            continue
+                        cell_id = int(cell_match.group(1))
+                        if not 0 <= cell_id <= 11:
                             continue
 
                         try:

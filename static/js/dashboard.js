@@ -2,6 +2,97 @@
 let selectedGNBIP = null;
 let configuredGNBIPs = [];
 
+
+// Throughput and RU Log share the same Select RU selection.
+let selectedRU = 1;
+let currentRuConfig = {ru_count: 1, cc_per_ru: 3};
+let ruSelectionVersion = 0;
+function clearThroughputCharts() {
+    [cell0DlChart, cell0UlChart, cell1DlChart, cell2DlChart].forEach(chart => {
+        chart.data.labels = [];
+        chart.data.datasets[0].data = [];
+        chart.update();
+    });
+}
+function renderRUButtons() {
+    const group = document.getElementById("ruButtonGroup");
+    if (!group) return;
+    group.replaceChildren();
+    for (let ru = 1; ru <= currentRuConfig.ru_count; ru++) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `btn btn-sm ${ru === selectedRU ? "btn-primary active" : "btn-outline-primary"}`;
+        button.textContent = `RU-${ru}`;
+        button.addEventListener("click", () => {
+            selectedRU = ru;
+            ruSelectionVersion++;
+            renderRUButtons();
+            clearThroughputCharts();
+            updateThroughput();
+            updateRuLog();
+        });
+        group.appendChild(button);
+    }
+    document.getElementById("cc1Card").hidden = currentRuConfig.cc_per_ru < 2;
+    document.getElementById("cc2Card").hidden = currentRuConfig.cc_per_ru < 3;
+    // Only global Cell 0 supports the existing UL chart.
+    const ulCell = (selectedRU - 1) * currentRuConfig.cc_per_ru;
+    document.getElementById("cell0UlChart").closest(".card").hidden = ulCell > 2;
+    for (const cc of [0, 1, 2]) {
+        const cellId = (selectedRU - 1) * currentRuConfig.cc_per_ru + cc;
+        for (const mode of ["DL", "UL"]) {
+            const title = document.getElementById(`cell${cc}${mode}Title`);
+            if (title) title.textContent = `RU-${selectedRU} / Cell-${cellId} ${mode} Throughput`;
+        }
+    }
+}
+async function loadRUConfig() {
+    if (!selectedGNBIP) return;
+    const ip = selectedGNBIP;
+    const response = await fetch(`/api/ru-config?ip=${encodeURIComponent(ip)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const config = await response.json();
+    if (ip !== selectedGNBIP) return;
+    currentRuConfig = config;
+    selectedRU = 1;
+    ruSelectionVersion++;
+    document.getElementById("ruCount").value = String(config.ru_count);
+    document.getElementById("ccPerRu").value = String(config.cc_per_ru);
+    renderRUButtons();
+    clearThroughputCharts();
+    updateThroughput();
+    updateRuLog();
+}
+document.getElementById("saveRuConfig").addEventListener("click", async () => {
+    if (!selectedGNBIP) return;
+    const ip = selectedGNBIP;
+    const button = document.getElementById("saveRuConfig");
+    const message = document.getElementById("ruConfigMessage");
+    button.disabled = true;
+    message.textContent = "";
+    try {
+        const response = await fetch(`/api/ru-config?ip=${encodeURIComponent(ip)}`, {
+            method: "PUT", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                ru_count: Number(document.getElementById("ruCount").value),
+                cc_per_ru: Number(document.getElementById("ccPerRu").value)
+            })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (ip === selectedGNBIP) {
+            currentRuConfig = data;
+            selectedRU = 1;
+            ruSelectionVersion++;
+            renderRUButtons();
+                    clearThroughputCharts();
+            updateThroughput();
+            updateRuLog();
+        }
+    } catch (error) { message.textContent = `Save failed: ${error.message}`; }
+    finally { button.disabled = false; }
+});
+
 function renderGNBButtons() {
     const group = document.getElementById("gnbButtonGroup");
     group.replaceChildren();
@@ -61,6 +152,7 @@ async function removeGNB(ip) {
                 document.title = "gNB Dashboard";
                 document.getElementById("status").textContent = "No gNB selected";
                 document.getElementById("status").className = "badge bg-secondary";
+                document.getElementById("reconnectGnbButton").disabled = true;
                 document.getElementById("netconfConsole").textContent = "No gNB selected";
                 document.getElementById("rumanagerConsole").textContent = "No gNB selected";
                 document.getElementById("l1Uptime").textContent = "Unknown";
@@ -256,73 +348,24 @@ function updateChart(
 // Update Throughput
 //=====================================
 
-function updateThroughput() {
+async function updateThroughput() {
     if (!selectedGNBIP) return;
-
-    fetch(
-        `/api/throughput?ip=${encodeURIComponent(selectedGNBIP)}&range=${range}`
-    )
-
-        .then(
-            r => r.json()
-        )
-
-        .then(
-            data => {
-
-                console.log(
-                    "THROUGHPUT DATA:",
-                    data
-                );
-
-
-                //=========================
-                // DL
-                //=========================
-
-                updateChart(
-                    cell0DlChart,
-                    data.cell0_dl
-                );
-
-
-                updateChart(
-                    cell1DlChart,
-                    data.cell1_dl
-                );
-
-
-                updateChart(
-                    cell2DlChart,
-                    data.cell2_dl
-                );
-
-
-                //=========================
-                // UL
-                //=========================
-
-                updateChart(
-                    cell0UlChart,
-                    data.cell0_ul
-                );
-
-            }
-        )
-
-        .catch(
-            error => {
-
-                console.error(
-                    "Failed to get throughput:",
-                    error
-                );
-
-            }
-        );
-
+    const ip = selectedGNBIP;
+    const ru = selectedRU;
+    const version = ruSelectionVersion;
+    try {
+        const response = await fetch(`/api/throughput?ip=${encodeURIComponent(ip)}&ru=${ru}&range=${encodeURIComponent(range)}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (ip !== selectedGNBIP || ru !== selectedRU || version !== ruSelectionVersion) return;
+        const charts = [cell0DlChart, cell1DlChart, cell2DlChart];
+        for (let cc = 0; cc < 3; cc++) {
+            const cell = data.cells.find(item => item.cc === cc);
+            updateChart(charts[cc], cell ? cell.dl : []);
+            if (cc === 0) updateChart(cell0UlChart, cell ? cell.ul : []);
+        }
+    } catch (error) { if (ip === selectedGNBIP) console.error("Failed to get throughput:", error); }
 }
-
 
 //=====================================
 // Time Range
@@ -576,18 +619,55 @@ function selectGNB(ip) {
         );
     });
 
+    ruSelectionVersion++;
+    document.getElementById("ruButtonGroup").replaceChildren();
+    document.getElementById("l1Uptime").textContent = "Waiting for L1 log...";
+    loadRUConfig().catch(error => {
+        document.getElementById("ruConfigMessage").textContent = `Load failed: ${error.message}`;
+    });
     // Refresh throughput and logs for the selected gNB
     updateThroughput();
     updateLogs();
     window.dispatchEvent(new Event("gnbChanged"));
 }
 
+// Manual reconnect applies only to the currently selected gNB.
+let reconnectRequestIP = null;
+const reconnectButton = document.getElementById("reconnectGnbButton");
+reconnectButton.addEventListener("click", async () => {
+    const ip = selectedGNBIP;
+    if (!ip || reconnectRequestIP) return;
+    reconnectRequestIP = ip;
+    reconnectButton.disabled = true;
+    reconnectButton.textContent = "Reconnecting...";
+    try {
+        const response = await fetch(`/api/gnbs/${encodeURIComponent(ip)}/reconnect`, {
+            method: "POST"
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (selectedGNBIP === ip) {
+            document.getElementById("status").textContent = "Reconnecting";
+            document.getElementById("status").className = "badge bg-warning text-dark";
+        }
+    } catch (error) {
+        if (selectedGNBIP === ip) window.alert(`Reconnect ${ip} failed: ${error.message}`);
+    } finally {
+        reconnectRequestIP = null;
+        updateGNBStatus();
+    }
+});
+
 // =====================================
 // Update gNB SSH Status
 // =====================================
 
 async function updateGNBStatus() {
-    if (!selectedGNBIP) return;
+    const reconnectButton = document.getElementById("reconnectGnbButton");
+    if (!selectedGNBIP) {
+        reconnectButton.disabled = true;
+        return;
+    }
 
     const ip = selectedGNBIP;
 
@@ -620,11 +700,20 @@ async function updateGNBStatus() {
             return;
         }
 
+        const uptimeElement = document.getElementById("l1Uptime");
+        if (uptimeElement) uptimeElement.textContent = data.connected === true
+            ? (data.l1_uptime || "Waiting for L1 log...") : "Unknown";
+        reconnectButton.textContent = data.reconnecting ? "Reconnecting..." : "Reconnect";
+        reconnectButton.disabled = data.connected === true || data.reconnecting === true || reconnectRequestIP !== null;
+
         if (data.connected === true) {
 
             statusElement.textContent = "Connected";
             statusElement.className = "badge bg-success";
 
+        } else if (data.reconnecting === true) {
+            statusElement.textContent = "Reconnecting";
+            statusElement.className = "badge bg-warning text-dark";
         } else {
 
             statusElement.textContent = "Disconnect";
@@ -642,6 +731,8 @@ async function updateGNBStatus() {
 
         statusElement.textContent = "Unknown";
         statusElement.className = "badge bg-secondary";
+        document.getElementById("l1Uptime").textContent = "Unknown";
+        reconnectButton.disabled = true;
 
     }
 }
@@ -674,6 +765,7 @@ window.addEventListener(
         const statusElement =
             document.getElementById("status");
 
+        reconnectButton.disabled = true;
         statusElement.textContent = "Checking...";
 
         statusElement.className =
@@ -703,7 +795,6 @@ setInterval(
 
 
 // RU log panel (independent from existing Netconf / ORU Boot monitors)
-let ruLogSelectedRu = 1;
 let ruLogSelectedType = "rumanager";
 let ruLogRequestCounter = 0;
 
@@ -712,7 +803,7 @@ async function updateRuLog() {
     if (!consoleEl) return;
     const ip = typeof selectedGNBIP !== "undefined" ? selectedGNBIP : "";
     if (!ip) { consoleEl.textContent = "Select a gNB first"; return; }
-    const ru = ruLogSelectedRu;
+    const ru = selectedRU;
     const logType = ruLogSelectedType;
     const requestId = ++ruLogRequestCounter;
     try {
@@ -720,7 +811,7 @@ async function updateRuLog() {
         const response = await fetch(url, {cache: "no-store"});
         const data = await response.json();
         if (requestId !== ruLogRequestCounter || ip !== selectedGNBIP ||
-            ru !== ruLogSelectedRu || logType !== ruLogSelectedType) return;
+            ru !== selectedRU || logType !== ruLogSelectedType) return;
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         const nearBottom = consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight < 45;
         const content = data.content || "(Log is empty)";
@@ -747,50 +838,6 @@ if (ruLogTypeGroup) ruLogTypeGroup.addEventListener("click", (event) => {
     });
     updateRuLog();
 });
-
-// RU log selection is independent of the throughput Select RU buttons.
-const ruLogRuGroup = document.getElementById("ruLogRuGroup");
-function renderRuLogRuButtons() {
-    if (!ruLogRuGroup) return;
-    const count = Math.max(1, Math.min(4, Number(document.getElementById("ruCount")?.value) || 1));
-    if (ruLogSelectedRu > count) ruLogSelectedRu = 1;
-    const wanted = Array.from({length: count}, (_, i) => i + 1);
-    const existing = Array.from(ruLogRuGroup.querySelectorAll("button[data-ru]")).map(b => Number(b.dataset.ru));
-    if (wanted.join(",") !== existing.join(",")) {
-        ruLogRuGroup.replaceChildren();
-        wanted.forEach(ru => {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.dataset.ru = String(ru);
-            button.textContent = `RU-${ru}`;
-            button.className = "btn btn-sm";
-            ruLogRuGroup.appendChild(button);
-        });
-    }
-    ruLogRuGroup.querySelectorAll("button[data-ru]").forEach(button => {
-        const active = Number(button.dataset.ru) === ruLogSelectedRu;
-        button.classList.toggle("btn-primary", active);
-        button.classList.toggle("btn-outline-primary", !active);
-        button.classList.toggle("active", active);
-        button.setAttribute("aria-pressed", String(active));
-    });
-    document.getElementById("ruLogTitle").textContent = "RU Log";
-}
-if (ruLogRuGroup) ruLogRuGroup.addEventListener("click", event => {
-    const button = event.target.closest("button[data-ru]");
-    if (!button) return;
-    ruLogSelectedRu = Number(button.dataset.ru);
-    renderRuLogRuButtons();
-    updateRuLog();
-});
-document.getElementById("ruCount")?.addEventListener("change", () => {
-    renderRuLogRuButtons();
-    updateRuLog();
-});
-document.getElementById("saveRuConfig")?.addEventListener("click", renderRuLogRuButtons);
-renderRuLogRuButtons();
-// Keep the selector in sync when a different gNB configuration is loaded.
-setInterval(renderRuLogRuButtons, 1000);
 
 window.addEventListener("gnbChanged", updateRuLog);
 setInterval(updateRuLog, 2000);
