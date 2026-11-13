@@ -1,0 +1,10 @@
+PS2400 Dashboard setup
+======================
+1. Copy these files into your existing FRU Dashboard project (retain existing backend/database.py, backend/ognb_component/base_server.py, CSS and other files).
+2. PS2400 SSH credentials are configured directly in app.py (username/password); no environment variable is required. Keep this file private and do not commit credentials to Git.
+3. Start Flask as usual and manually add PS2400-10.255.175.92.
+4. The PS2400 monitor selects the latest du_stats_YY_MM_DD_HH_MM_SS.txt under /nonvol_logs/log/pram/ and polls every 3 seconds.
+5. The UI displays only Cell-0 DL/UL charts and Total Number of UEs; the standard gNB UI remains intact.
+6. Throughput values from SCH are already Mbps, and are saved in the existing SQLite throughput table.
+7. No gNB is monitored automatically on Flask startup.
+Note: Live SSH connectivity and actual PS2400 logs were not available for integration testing.

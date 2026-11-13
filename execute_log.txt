@@ -1,0 +1,8 @@
+2026-11-13 18:01:34,634 - WARNING - paramiko.transport - Oops, unhandled type 3 ('unimplemented')
+2026-11-13 18:01:34,681 - WARNING - paramiko.transport - Oops, unhandled type 3 ('unimplemented')
+2026-11-13 18:01:42,649 - WARNING - app - [RU Log][10.255.174.239] Timeout opening channel.
+2026-11-13 18:01:42,650 - WARNING - app - [RU Log][10.255.174.239] Timeout opening channel.
+2026-11-13 18:12:10,819 - WARNING - paramiko.transport - Oops, unhandled type 3 ('unimplemented')
+2026-11-13 18:12:10,861 - WARNING - paramiko.transport - Oops, unhandled type 3 ('unimplemented')
+2026-11-13 18:12:18,804 - WARNING - app - [RU Log][10.255.174.239] Timeout opening channel.
+2026-11-13 18:12:18,819 - WARNING - app - [RU Log][10.255.174.239] Timeout opening channel.
