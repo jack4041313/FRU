@@ -28,8 +28,8 @@ db = GNBDatabase()
 # gNB Pool
 # =========================================================
 
-# Existing gNBs remain configured at startup.
-DEFAULT_GNBS = ["10.255.174.7", "10.255.175.105"]
+# No devices are automatically loaded or monitored on application startup.
+DEFAULT_GNBS = []
 GNB_CONFIG_FILE = Path(__file__).resolve().parent / "database" / "gnb_ips.json"
 GNB_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 GNB_POOL_LOCK = threading.RLock()
@@ -38,6 +38,9 @@ GNB_POOL_LOCK = threading.RLock()
 GNB_USERNAME = os.environ.get("GNB_USERNAME", "ognb")
 GNB_PASSWORD = os.environ.get("GNB_PASSWORD", "ognb123")
 GNB_SSH_PORT = int(os.environ.get("GNB_SSH_PORT", "22"))
+PS2400_USERNAME = "padmin"
+PS2400_PASSWORD = "Pega@2025"
+PS2400_SSH_PORT = int(os.environ.get("PS2400_SSH_PORT", "22"))
 
 # Only permit gNB management networks. Override via comma-separated CIDRs.
 ALLOWED_GNB_NETWORKS = [
@@ -48,38 +51,53 @@ ALLOWED_GNB_NETWORKS = [
 ]
 
 
-def validate_gnb_ip(value):
+def parse_gnb_input(value):
+    """Return (real SSH IPv4 address, device type), or (None, None)."""
+    if not isinstance(value, str):
+        return None, None
+    value = value.strip()
+    device_type = "PS2400" if value.upper().startswith("PS2400-") else "STANDARD"
+    address = value[7:] if device_type == "PS2400" else value
     try:
-        addr = ipaddress.ip_address(value)
+        addr = ipaddress.ip_address(address)
     except (ValueError, TypeError):
-        return None
+        return None, None
     if addr.version != 4 or not any(addr in network for network in ALLOWED_GNB_NETWORKS):
-        return None
-    return str(addr)
+        return None, None
+    return str(addr), device_type
 
 
-def load_gnb_ips():
-    ips = list(DEFAULT_GNBS)
-    if GNB_CONFIG_FILE.exists():
-        try:
-            saved = json.loads(GNB_CONFIG_FILE.read_text(encoding="utf-8"))
-            if isinstance(saved, list):
-                ips.extend(saved)
-        except (OSError, ValueError) as error:
-            print(f"[gNB Pool] Failed to load saved IPs: {error}")
-    return list(dict.fromkeys(ip for value in ips if (ip := validate_gnb_ip(value))))
+def validate_gnb_ip(value):
+    ip, _ = parse_gnb_input(value)
+    return ip
+
+
+def load_gnb_entries():
+    """Start with an empty device list on every Flask launch.
+
+    Previously saved entries are deliberately not restored: devices only
+    become active after the user explicitly adds them through the UI.
+    """
+    return {}
+
+
+GNB_DEVICE_TYPES = load_gnb_entries()
+
+
+def display_gnb_name(ip):
+    return f"PS2400-{ip}" if GNB_DEVICE_TYPES.get(ip) == "PS2400" else ip
 
 
 def save_gnb_ips():
     # Called while holding GNB_POOL_LOCK.
     temp = GNB_CONFIG_FILE.with_suffix(".tmp")
-    temp.write_text(json.dumps(list(GNB_POOL), indent=2), encoding="utf-8")
+    temp.write_text(json.dumps([display_gnb_name(ip) for ip in GNB_POOL], indent=2), encoding="utf-8")
     temp.replace(GNB_CONFIG_FILE)
 
 
 GNB_POOL = {
     ip: {"username": GNB_USERNAME, "password": GNB_PASSWORD, "port": GNB_SSH_PORT}
-    for ip in load_gnb_ips()
+    for ip in GNB_DEVICE_TYPES
 }
 
 
@@ -87,7 +105,7 @@ GNB_POOL = {
 def list_gnbs():
     with GNB_POOL_LOCK:
         ips = list(GNB_POOL)
-    return jsonify({"gnbs": ips})
+    return jsonify({"gnbs": ips, "labels": {ip: display_gnb_name(ip) for ip in ips}})
 
 
 @app.route("/api/gnbs", methods=["POST"])
@@ -95,7 +113,7 @@ def add_gnb():
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "Expected JSON object"}), 400
-    ip = validate_gnb_ip(payload.get("ip"))
+    ip, device_type = parse_gnb_input(payload.get("ip"))
     if ip is None:
         return jsonify({"error": "Invalid IP or IP outside allowed gNB networks"}), 400
 
@@ -106,19 +124,26 @@ def add_gnb():
             existing = True
         else:
             existing = False
+            GNB_DEVICE_TYPES[ip] = device_type
             GNB_POOL[ip] = {
-                "username": GNB_USERNAME, "password": GNB_PASSWORD, "port": GNB_SSH_PORT
+                "username": PS2400_USERNAME if device_type == "PS2400" else GNB_USERNAME,
+                "password": PS2400_PASSWORD if device_type == "PS2400" else GNB_PASSWORD,
+                "port": PS2400_SSH_PORT if device_type == "PS2400" else GNB_SSH_PORT,
+                "device_type": device_type
             }
             try:
                 save_gnb_ips()
             except OSError as error:
                 del GNB_POOL[ip]
+                GNB_DEVICE_TYPES.pop(ip, None)
                 return jsonify({"error": f"Unable to save gNB list: {error}"}), 500
+        if existing and GNB_DEVICE_TYPES.get(ip) != device_type:
+            return jsonify({"error": "Device type cannot change while added; remove it first"}), 409
         config = GNB_POOL[ip].copy()
 
     if not existing or get_gnb(ip) is None:
         start_gnb_once(ip, config)
-    return jsonify({"ip": ip, "added": not existing, "status": "connecting"}), (201 if not existing else 200)
+    return jsonify({"ip": ip, "label": display_gnb_name(ip), "device_type": GNB_DEVICE_TYPES[ip], "added": not existing, "status": "connecting"}), (201 if not existing else 200)
 
 
 
@@ -133,7 +158,8 @@ def start_gnb_once(ip, config):
             return existing
         thread = start_gnb_monitor_thread(
             ip_address=ip, username=config["username"],
-            password=config["password"], port=config["port"]
+            password=config["password"], port=config["port"],
+            device_type=config.get("device_type", "STANDARD")
         )
         GNB_MONITOR_THREADS[ip] = thread
         return thread
@@ -198,10 +224,12 @@ def remove_gnb(ip):
         if not success:
             return jsonify({"error": message}), 409
         config = GNB_POOL.pop(ip)
+        device_type = GNB_DEVICE_TYPES.pop(ip, "STANDARD")
         try:
             save_gnb_ips()
         except OSError as exc:
             GNB_POOL[ip] = config
+            GNB_DEVICE_TYPES[ip] = device_type
             return jsonify({"error": f"Stopped, but unable to save list: {exc}"}), 500
     with GNB_MONITOR_THREADS_LOCK:
         GNB_MONITOR_THREADS.pop(ip, None)
@@ -247,6 +275,8 @@ def gnb_status():
     return jsonify({
         "ip": ip,
         "connected": connected,
+        "ue_count": getattr(gnb, "ue_count", None) if connected else None,
+        "device_type": GNB_DEVICE_TYPES.get(ip, "STANDARD"),
         "l1_uptime": gnb.get_uptime() if connected else "Unknown",
         "reconnecting": ip in GNB_RECONNECTING or is_gnb_starting(ip)
     })
@@ -326,6 +356,11 @@ def throughput():
             "error": "Unknown gNB IP",
             "ip": ip
         }), 400
+
+    if GNB_DEVICE_TYPES.get(ip) == "PS2400":
+        return jsonify({"cells": [{"cc": 0, "cell_id": 0,
+            "dl": db.get_throughput_history(gnb_ip=ip, duration=duration, cell_id=0, column="dl_throughput"),
+            "ul": db.get_throughput_history(gnb_ip=ip, duration=duration, cell_id=0, column="ul_throughput")}]})
 
     with RU_CONFIG_LOCK:
         config = read_ru_configs().get(ip, {"ru_count": 1, "cc_per_ru": 3})
@@ -466,16 +501,10 @@ def ru_log():
 if __name__ == "__main__":
 
     # =====================================================
-    # Start all gNB monitors
+    # No gNB monitors are started at application launch.
     # =====================================================
 
-    for ip, config in GNB_POOL.items():
-        print(
-            "[gNB Pool] "
-            f"Starting monitor: {ip}"
-        )
-
-        start_gnb_once(ip, config)
+    # Device monitors are started only by POST /api/gnbs.
 
     # =====================================================
     # Start database cleanup

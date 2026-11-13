@@ -64,7 +64,7 @@
         <label class="form-label fw-bold" for="gnbIpInput">Add gNB:</label>
         <form id="addGnbForm" class="d-flex flex-nowrap align-items-center gap-2 mb-0" style="min-width:0;">
             <input id="gnbIpInput" class="form-control" style="width:200px; max-width:65%; min-width:0;" type="text"
-                   placeholder="10.255.174.239" autocomplete="off" required>
+                   autocomplete="off" required>
             <button id="addGnbButton" type="submit" class="btn btn-primary text-nowrap flex-shrink-0">Add gNB</button>
         </form>
         <div id="gnbAddMessage" class="small mt-2" role="status" aria-live="polite"></div>
@@ -76,7 +76,7 @@
      Log Windows
      ===================================== -->
 
-<div class="log-grid">
+<div class="log-grid" id="gnbLogGrid">
 
 
     <!-- =================================
@@ -148,10 +148,10 @@
      RU Configuration / Select RU / Time Range
      Same row: RU Count -> CC per RU -> Save -> Select RU -> Time Range
      ===================================== -->
-<div class="d-flex flex-nowrap align-items-end gap-3 mt-3 mb-4"
+<div id="gnbControls" class="d-flex flex-nowrap align-items-end gap-3 mt-3 mb-4"
      style="width:100%; overflow-x:auto; padding-bottom:8px;">
 
-    <div class="flex-shrink-0" style="width:110px;">
+    <div class="flex-shrink-0" id="ruCountControl" style="width:110px;">
         <label for="ruCount" class="form-label">RU Count</label>
         <select id="ruCount" class="form-select">
             <option value="1">1 RU</option>
@@ -161,7 +161,7 @@
         </select>
     </div>
 
-    <div class="flex-shrink-0" style="width:120px;">
+    <div class="flex-shrink-0" id="ccPerRuControl" style="width:120px;">
         <label for="ccPerRu" class="form-label">CC per RU</label>
         <select id="ccPerRu" class="form-select">
             <option value="1">1 CC</option>
@@ -170,12 +170,12 @@
         </select>
     </div>
 
-    <div class="flex-shrink-0">
+    <div class="flex-shrink-0" id="saveRuControl">
         <button id="saveRuConfig" class="btn btn-primary text-nowrap" type="button">Save Configuration</button>
         <span id="ruConfigMessage" class="small d-none" role="status" aria-live="polite"></span>
     </div>
 
-    <div class="flex-shrink-0">
+    <div class="flex-shrink-0" id="selectRuControl">
         <label class="form-label fw-bold">Select RU:</label>
         <div id="ruButtonGroup" class="d-flex flex-nowrap gap-2" style="min-height:38px; align-items:center;"></div>
     </div>
@@ -185,7 +185,8 @@
             <button id="reconnectGnbButton" class="btn btn-outline-primary btn-sm text-nowrap" type="button" disabled>Reconnect</button>
             <span>Status:</span>
             <span id="status" class="badge bg-secondary">Checking...</span>
-            <span class="ms-2">L1 Up-Time:</span>
+            <span id="ps2400UeControl" hidden class="ms-2">Total Number of UEs: <span id="ps2400UeCount" class="badge bg-info text-dark">--</span></span>
+            <span class="ms-2" id="l1UptimeLabel">L1 Up-Time:</span>
             <span id="l1Uptime" class="badge bg-info text-dark">Unknown</span>
         </div>
     </div>

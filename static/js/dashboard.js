@@ -1,6 +1,41 @@
 // Selected gNB is managed here (not in an inline HTML script).
 let selectedGNBIP = null;
 let configuredGNBIPs = [];
+let gnbDisplayLabels = {};
+
+// PS2400 uses only Cell-0 DL/UL charts. Standard gNB layout remains unchanged.
+function isPS2400(ip = selectedGNBIP) {
+    return Boolean(ip && /^PS2400-/i.test(gnbDisplayLabels[ip] || ""));
+}
+function applyDeviceLayout() {
+    const smallCell = isPS2400();
+    const ueControl = document.getElementById("ps2400UeControl");
+    if (ueControl) ueControl.hidden = !smallCell;
+    const uptimeLabel = document.getElementById("l1UptimeLabel");
+    if (uptimeLabel) uptimeLabel.hidden = smallCell;
+    const uptimeValue = document.getElementById("l1Uptime");
+    if (uptimeValue) uptimeValue.hidden = smallCell;
+    const logGrid = document.getElementById("gnbLogGrid");
+    const ruLog = document.getElementById("ruLogsCard");
+    if (logGrid) logGrid.hidden = smallCell;
+    if (ruLog) ruLog.hidden = smallCell;
+    for (const id of ["ruCountControl", "ccPerRuControl", "saveRuControl", "selectRuControl"]) {
+        const el = document.getElementById(id);
+        if (el) el.hidden = smallCell;
+    }
+    // The standard chart updater may unhide these cards; apply after RU rendering too.
+    const cc1 = document.getElementById("cc1Card");
+    const cc2 = document.getElementById("cc2Card");
+    if (cc1) cc1.hidden = smallCell || currentRuConfig.cc_per_ru < 2;
+    if (cc2) cc2.hidden = smallCell || currentRuConfig.cc_per_ru < 3;
+    const ul = document.getElementById("cell0UlChart")?.closest(".card");
+    if (ul) ul.hidden = !smallCell && (selectedRU - 1) * currentRuConfig.cc_per_ru > 2;
+    if (smallCell) {
+        document.getElementById("cell0DLTitle").textContent = "Cell-0 DL Throughput";
+        document.getElementById("cell0ULTitle").textContent = "Cell-0 UL Throughput";
+    }
+}
+
 
 
 // Throughput and RU Log share the same Select RU selection.
@@ -45,6 +80,7 @@ function renderRUButtons() {
             if (title) title.textContent = `RU-${selectedRU} / Cell-${cellId} ${mode} Throughput`;
         }
     }
+    applyDeviceLayout();
 }
 async function loadRUConfig() {
     if (!selectedGNBIP) return;
@@ -100,7 +136,7 @@ function renderGNBButtons() {
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.gnbIp = ip;
-        button.textContent = ip;
+        button.textContent = gnbDisplayLabels[ip] || ip;
         const active = ip === selectedGNBIP;
         button.className = `btn ${active ? "btn-primary active" : "btn-outline-primary"}`;
         button.setAttribute("aria-pressed", active ? "true" : "false");
@@ -123,6 +159,7 @@ async function loadGNBs() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         configuredGNBIPs = data.gnbs || [];
+        gnbDisplayLabels = data.labels || {};
         if (!configuredGNBIPs.includes(selectedGNBIP)) {
             selectedGNBIP = configuredGNBIPs[0] || null;
         }
@@ -143,11 +180,13 @@ async function removeGNB(ip) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         configuredGNBIPs = configuredGNBIPs.filter(item => item !== ip);
+        delete gnbDisplayLabels[ip];
         if (selectedGNBIP === ip) {
             selectedGNBIP = null;
             if (configuredGNBIPs.length) {
                 selectGNB(configuredGNBIPs[0]);
             } else {
+                applyDeviceLayout();
                 document.getElementById("dashboardTitle").textContent = "gNB Dashboard";
                 document.title = "gNB Dashboard";
                 document.getElementById("status").textContent = "No gNB selected";
@@ -184,11 +223,12 @@ async function addGNB(event) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (!configuredGNBIPs.includes(data.ip)) configuredGNBIPs.push(data.ip);
+        gnbDisplayLabels[data.ip] = data.label || data.ip;
         renderGNBButtons();
         selectGNB(data.ip);
         message.textContent = data.added
-            ? `${data.ip} added. Connecting over SSH...`
-            : `${data.ip} already exists (connection retry requested if needed).`;
+            ? `${data.label || data.ip} added. Connecting over SSH...`
+            : `${data.label || data.ip} already exists (connection retry requested if needed).`;
         input.value = "";
     } catch (error) {
         message.textContent = `Add gNB failed: ${error.message}`;
@@ -407,7 +447,7 @@ setInterval(
 //=====================================
 
 function updateLogs() {
-    if (!selectedGNBIP) return;
+    if (!selectedGNBIP || isPS2400()) return;
 
      fetch(`/api/logs?ip=${encodeURIComponent(selectedGNBIP)}`)
 
@@ -599,6 +639,8 @@ function updateLogs() {
 function selectGNB(ip) {
 
     selectedGNBIP = ip;
+    selectedRU = 1;
+    applyDeviceLayout();
 
     document.getElementById("dashboardTitle").textContent =
         ip + " Dashboard";
@@ -700,6 +742,8 @@ async function updateGNBStatus() {
             return;
         }
 
+        const ueElement = document.getElementById("ps2400UeCount");
+        if (ueElement) ueElement.textContent = data.connected && data.ue_count !== null && data.ue_count !== undefined ? String(data.ue_count) : "--";
         const uptimeElement = document.getElementById("l1Uptime");
         if (uptimeElement) uptimeElement.textContent = data.connected === true
             ? (data.l1_uptime || "Waiting for L1 log...") : "Unknown";
@@ -803,6 +847,7 @@ async function updateRuLog() {
     if (!consoleEl) return;
     const ip = typeof selectedGNBIP !== "undefined" ? selectedGNBIP : "";
     if (!ip) { consoleEl.textContent = "Select a gNB first"; return; }
+    if (isPS2400(ip)) return;
     const ru = selectedRU;
     const logType = ruLogSelectedType;
     const requestId = ++ruLogRequestCounter;

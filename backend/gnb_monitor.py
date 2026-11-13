@@ -2,6 +2,7 @@ import threading
 import traceback
 
 from backend.ognb_component.ognb_server import ognb
+from backend.ps2400_monitor import PS2400Monitor
 
 # =========================================================
 # gNB Pool
@@ -159,7 +160,8 @@ def start_gnb_monitor(
         ip_address,
         username,
         password,
-        port=22
+        port=22,
+        device_type="STANDARD"
 ):
     print(
         f"[gNB Monitor] "
@@ -190,7 +192,8 @@ def start_gnb_monitor(
 
         try:
 
-            gnb = ognb(
+            monitor_class = PS2400Monitor if device_type == "PS2400" else ognb
+            gnb = monitor_class(
 
                 ip_address=ip_address,
 
@@ -307,6 +310,11 @@ def start_gnb_monitor(
     # Netconf
     # =====================================================
 
+    if device_type == "PS2400":
+        with _gnb_pool_lock:
+            _gnb_threads[ip_address] = [throughput_thread]
+        return gnb
+
     netconf_thread = threading.Thread(
 
         target=start_netconf_monitor,
@@ -381,9 +389,9 @@ def start_gnb_monitor(
 # Start gNB monitor in background thread
 # =========================================================
 
-def _run_reserved_monitor(ip_address, username, password, port):
+def _run_reserved_monitor(ip_address, username, password, port, device_type):
     try:
-        start_gnb_monitor(ip_address, username, password, port)
+        start_gnb_monitor(ip_address, username, password, port, device_type)
     finally:
         with _gnb_pool_lock:
             _gnb_starting.discard(ip_address)
@@ -393,7 +401,8 @@ def start_gnb_monitor_thread(
         ip_address,
         username,
         password,
-        port=22
+        port=22,
+        device_type="STANDARD"
 ):
     with _gnb_pool_lock:
         if ip_address in _gnb_pool or ip_address in _gnb_starting or ip_address in _gnb_stopping:
@@ -413,7 +422,8 @@ def start_gnb_monitor_thread(
 
             password,
 
-            port
+            port,
+            device_type
 
         ),
 
